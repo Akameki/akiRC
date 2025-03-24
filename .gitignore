@@ -1,0 +1,6 @@
+.ignore/
+
+debug/
+target/
+**/*.rs.bk
+.pdb

@@ -2,13 +2,17 @@ pub mod parse;
 
 use std::fmt::Display;
 
-pub type IRCPrefix = String;
+// pub type IRCPrefix = String;
 
 #[allow(non_camel_case_types)]
 #[derive(Debug, Copy, Clone)]
 #[repr(u16)]
 pub enum Numeric {
     RPL_WELCOME = 1,
+    RPL_YOURHOST = 2,
+    RPL_CREATED = 3,
+    RPL_MYINFO = 4,
+    RPL_BOUNCE = 5,
 }
 
 #[derive(Debug)]
@@ -57,13 +61,20 @@ impl Display for Command {
 
 #[derive(Debug)]
 pub struct Message {
-    pub prefix: Option<IRCPrefix>,
+    pub prefix: Option<String>,
     pub command: Command,
 }
 
 impl Message {
-    pub fn new(prefix: Option<IRCPrefix>, command: Command) -> Self {
+    pub fn new(prefix: Option<String>, command: Command) -> Self {
         Message { prefix, command }
+    }
+
+    pub fn new_numeric(prefix: &str, numeric: Numeric, target: &str, params: &str) -> Message {
+        Self::new(
+            Some(prefix.into()),
+            Command::Numeric(numeric, vec![target.into(), params.into()]),
+        )
     }
 }
 impl Display for Message {

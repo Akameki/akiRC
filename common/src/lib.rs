@@ -1,6 +1,8 @@
 pub mod parse;
+pub mod stream_handler;
 
-use std::fmt::Display;
+use std::{error::Error, fmt::Display};
+use thiserror::Error;
 
 // pub type IRCPrefix = String;
 
@@ -84,4 +86,14 @@ impl Display for Message {
         }
         write!(f, "{}", self.command)
     }
+}
+
+#[derive(Error, Debug)]
+pub enum IrcError {
+    #[error("IO Error: {0}")]
+    Io(#[from] std::io::Error),
+    #[error("EOF")]
+    Eof,
+    #[error("Invalid IRC message: {0}")]
+    IrcParseError(String),
 }

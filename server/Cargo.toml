@@ -6,3 +6,4 @@ edition = "2024"
 [dependencies]
 common = { path = "../common" }
 dns-lookup = "2.0.4"
+owo-colors = "4.2.0"

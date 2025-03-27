@@ -4,6 +4,7 @@ pub mod user;
 use channel::SharedChannel;
 use core::str;
 use dns_lookup::lookup_addr;
+use owo_colors::OwoColorize;
 use std::{
     collections::HashMap,
     io::{self, BufReader, prelude::*},
@@ -12,8 +13,8 @@ use std::{
     thread,
 };
 
-use common::Numeric::*;
 use common::*;
+use common::{Numeric::*, stream_handler::blocking_read_message};
 use user::{SharedUser, User};
 
 pub struct ServerState {
@@ -36,20 +37,24 @@ fn main() {
 
     for stream in listener.incoming() {
         match stream {
-            // Ok(st) => handle_connection(st).expect("error handling connection"),
             Ok(st) => {
-                thread::spawn(|| handle_connection(st));
+                thread::spawn(|| {
+                    if let Err(e) = handle_connection(st) {
+                        eprintln!("{e}");
+                    };
+                });
             }
-            Err(e) => panic!("uhoh: {e}"),
+            Err(e) => eprintln!("error accepting incoming connection: {e}"),
         }
     }
 }
 
 fn handle_connection(mut stream: TcpStream) -> io::Result<()> {
     let addr = stream.peer_addr()?;
-    println!("Connected: {}", addr);
+    println!("{}{}", "Connected: ".green(), addr);
 
     let mut buf_reader = BufReader::new(stream.try_clone()?);
+    let mut buffer = String::new();
 
     let mut user = User {
         username: String::from(""),
@@ -60,38 +65,30 @@ fn handle_connection(mut stream: TcpStream) -> io::Result<()> {
     };
 
     loop {
-        // let mut buf: [u8; 512] = [0; 512];
-        let mut str = String::new();
-        if buf_reader.read_line(&mut str)? == 0 {
-            break;
+        let next_msg = blocking_read_message(&mut buf_reader, &mut buffer);
+        match next_msg {
+            Ok(m) => handle_message(m, &mut user),
+            Err(IrcError::IrcParseError(s)) => println!("{}", s.bright_purple()),
+            Err(IrcError::Io(e)) => return Err(e),
+            Err(IrcError::Eof) => break,
         }
-
-        // separate messages by \r and \n, ignoring empty messages.
-        str.split("\r")
-            .flat_map(|m| m.split("\n"))
-            .filter(|x| !x.is_empty())
-            .for_each(|m| handle_message(m, &mut user));
-
-        // if let (false, Some(nick), Some(username)) = (&mut user.registered, &user.nick, &user.user)
-
         if !user.registered && !user.nickname.is_empty() && !user.username.is_empty() {
             register_connection(&mut stream, &mut user)?;
         }
     }
-    println!("Disconnected: {addr}");
+
+    // on EOF
+    println!("{}{}", "Disconnected: ".red(), addr);
     Ok(())
 }
 
-fn handle_message(s: &str, user: &mut User) {
+fn handle_message(message: Message, user: &mut User) {
     use common::Command::*;
-    let Ok(msg): Result<Message, String> = s.parse() else {
-        return println!("rec [unparsed] < {s}");
-    };
 
-    println!("rec < {msg}");
-    match msg.command {
-        Invalid() => println!("[unrecognized] {s}"),
-        Numeric(_, _) => println!("!? client sent numeric: {s}"),
+    println!("rec < {message}");
+    match message.command {
+        Invalid() => println!("???"),
+        Numeric(_, _) => println!("ignoring numeric {message}"),
         Nick(nick) => user.nickname = nick,
         User(username, _, _, _) => user.username = username,
     }

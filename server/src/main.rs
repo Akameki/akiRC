@@ -1,13 +1,14 @@
 pub mod channel;
+pub mod server_state;
 pub mod user;
 
 use channel::SharedChannel;
-use core::str;
 use dns_lookup::lookup_addr;
 use owo_colors::OwoColorize;
+use server_state::{ServerState, SharedServerState};
 use std::{
     collections::HashMap,
-    io::{self, BufReader, prelude::*},
+    io::{self, BufReader},
     net::{TcpListener, TcpStream},
     sync::{Arc, Mutex},
     thread,
@@ -17,29 +18,17 @@ use common::*;
 use common::{Numeric::*, stream_handler::blocking_read_message};
 use user::{SharedUser, User};
 
-pub struct ServerState {
-    pub users: Arc<Mutex<HashMap<TcpStream, SharedUser>>>,
-    pub channels: Arc<Mutex<HashMap<String, SharedChannel>>>,
-}
-
-impl ServerState {
-    pub fn new() -> Self {
-        ServerState {
-            users: Arc::new(Mutex::new(HashMap::new())),
-            channels: Arc::new(Mutex::new(HashMap::new())),
-        }
-    }
-}
-
 fn main() {
-    println!("i am server!");
+    let server = Arc::new(Mutex::new(ServerState::new()));
     let listener = TcpListener::bind("0.0.0.0:9999").unwrap();
-
+    
+    println!("{}", "akiRC server started!".underline());
     for stream in listener.incoming() {
         match stream {
             Ok(st) => {
-                thread::spawn(|| {
-                    if let Err(e) = handle_connection(st) {
+                let server_clone = server.clone();
+                thread::spawn(move || {
+                    if let Err(e) = handle_connection(server_clone, st) {
                         eprintln!("{e}");
                     };
                 });
@@ -49,94 +38,105 @@ fn main() {
     }
 }
 
-fn handle_connection(mut stream: TcpStream) -> io::Result<()> {
+fn handle_connection(server: SharedServerState, stream: TcpStream) -> io::Result<()> {
     let addr = stream.peer_addr()?;
     println!("{}{}", "Connected: ".green(), addr);
 
     let mut buf_reader = BufReader::new(stream.try_clone()?);
     let mut buffer = String::new();
 
-    let mut user = User {
-        username: String::from(""),
-        nickname: String::from(""),
-        hostname: String::from(""),
-        realname: String::from(""),
-        registered: false,
-    };
+    let user = Arc::new(Mutex::new(User::new(stream)));
+    let mut registered = false;
 
-    loop {
-        let next_msg = blocking_read_message(&mut buf_reader, &mut buffer);
-        match next_msg {
-            Ok(m) => handle_message(m, &mut user),
+    while !registered {
+        match blocking_read_message(&mut buf_reader, &mut buffer) {
+            Ok(msg) => match msg.command {
+                Command::Nick(..) | Command::User(..) => handle_message(&user, msg),
+                _ => println!("message from unregistered client {}", msg),
+            },
             Err(IrcError::IrcParseError(s)) => println!("{}", s.bright_purple()),
+            Err(IrcError::Eof) => {
+                println!("{} {}", "Unregistered client disconnected:".red(), addr);
+                return Ok(());
+            }
             Err(IrcError::Io(e)) => return Err(e),
-            Err(IrcError::Eof) => break,
         }
-        if !user.registered && !user.nickname.is_empty() && !user.username.is_empty() {
-            register_connection(&mut stream, &mut user)?;
-        }
+        registered = try_register_connection(&server, &user)?;
     }
 
-    // on EOF
-    println!("{}{}", "Disconnected: ".red(), addr);
-    Ok(())
+    { server.lock().unwrap().print_users(); }
+
+    loop {
+        match blocking_read_message(&mut buf_reader, &mut buffer) {
+            Ok(msg) => handle_message(&user, msg),
+            Err(IrcError::IrcParseError(s)) => println!("{}", s.bright_purple()),
+            Err(IrcError::Eof) => {
+                server.lock().unwrap().remove_user(&user);
+                println!("{} {}", "Client disconnected:".red(), addr);
+                return Ok(());
+            }
+            Err(IrcError::Io(e)) => return Err(e),
+        }
+    }
 }
 
-fn handle_message(message: Message, user: &mut User) {
+fn handle_message(user: &SharedUser, message: Message) {
     use common::Command::*;
 
     println!("rec < {message}");
     match message.command {
         Invalid() => println!("???"),
         Numeric(_, _) => println!("ignoring numeric {message}"),
-        Nick(nick) => user.nickname = nick,
-        User(username, _, _, _) => user.username = username,
+        Nick(nick) => user.lock().unwrap().nickname = nick,
+        User(username, _, _, _) => user.lock().unwrap().username = username,
     }
 }
 
-fn register_connection(stream: &mut TcpStream, user: &mut User) -> io::Result<()> {
-    user.hostname =
-        lookup_addr(&stream.peer_addr()?.ip()).unwrap_or(stream.peer_addr()?.ip().to_string());
-    let mut buffer = Vec::new();
-    write!(
-        buffer,
-        "{}\r\n{}\r\n{}\r\n{}\r\n",
-        Message::new_numeric(
-            "akiRC",
+fn try_register_connection(
+    server: &SharedServerState,
+    shared_user: &SharedUser,
+) -> io::Result<bool> {
+    let mut user = shared_user.lock().unwrap();
+    if user.nickname.is_empty() || user.username.is_empty() {
+        return Ok(false);
+    }
+    let ip = &user.stream.peer_addr()?.ip();
+    user.hostname = lookup_addr(ip).unwrap_or(ip.to_string());
+    {
+        let server = server.lock().unwrap();
+        let mut users = server.users.lock().unwrap();
+        if users.contains_key(&user.nickname) {
+            // TODO: handle nick in use
+            println!(
+                "user {} tried joining with taken nick {}",
+                user.username, user.nickname
+            );
+            return Ok(false);
+        }
+        users.insert(user.nickname.clone(), shared_user.clone());
+    }
+    let replies = vec![
+        user.create_reply(
             RPL_WELCOME,
-            &user.username,
             &format!(
                 ":Welcome to the Internet Relay Network {}!{}@{}",
                 user.nickname, user.username, user.hostname
-            )
+            ),
         ),
-        Message::new_numeric(
-            "akiRC",
+        user.create_reply(
             RPL_YOURHOST,
-            &user.username,
             &format!(
                 ":Your host is {}, running version {}",
                 "akiRC.fake.servername", "ver0"
-            )
+            ),
         ),
-        Message::new_numeric(
-            "akiRC",
-            RPL_CREATED,
-            &user.username,
-            &format!(":This server was created {}", "?")
-        ),
-        Message::new_numeric(
-            "akiRC",
+        user.create_reply(RPL_CREATED, &format!(":This server was created {}", "?")),
+        user.create_reply(
             RPL_MYINFO,
-            &user.username,
-            &format!(":{} {} {} {}", "akiRC.fake.servername", "ver0", "", "")
-        )
-    )?;
+            &format!(":{} {} {} {}", "akiRC.fake.servername", "ver0", "", ""),
+        ),
+    ];
+    user.send(&replies)?;
 
-    println!("send > {}", str::from_utf8(&buffer).expect("utf8 string?"));
-    stream.write_all(&buffer)?;
-
-    user.registered = true;
-
-    Ok(())
+    Ok(true)
 }

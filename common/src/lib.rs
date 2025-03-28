@@ -1,7 +1,7 @@
 pub mod parse;
 pub mod stream_handler;
 
-use std::{error::Error, fmt::Display};
+use std::fmt::Display;
 use thiserror::Error;
 
 // pub type IRCPrefix = String;

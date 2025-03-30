@@ -17,7 +17,11 @@ use crate::{
     user::{SharedUser, User},
 };
 
-use common::{Command, IrcError, Message, Numeric::*, stream_handler::blocking_read_message};
+use common::{
+    IrcError,
+    message::{Command, Message, Numeric::*},
+    stream_handler::blocking_read_message,
+};
 
 fn main() {
     let server = Arc::new(Mutex::new(ServerState::new()));
@@ -55,7 +59,9 @@ fn handle_connection(server: SharedServerState, stream: TcpStream) -> io::Result
                 Command::Nick(..) | Command::User(..) => handle_message(&user, msg),
                 _ => println!("message from unregistered client {}", msg),
             },
-            Err(IrcError::IrcParseError(i, e)) => println!("{} {}", e.bright_purple(), i.bright_purple()),
+            Err(IrcError::IrcParseError(i, e)) => {
+                println!("{} {}", e.bright_purple(), i.bright_purple())
+            }
             Err(IrcError::Eof) => {
                 println!("{} {}", "Unregistered client disconnected:".red(), addr);
                 return Ok(());
@@ -72,7 +78,9 @@ fn handle_connection(server: SharedServerState, stream: TcpStream) -> io::Result
     loop {
         match blocking_read_message(&mut buf_reader, &mut buffer) {
             Ok(msg) => handle_message(&user, msg),
-            Err(IrcError::IrcParseError(i, e)) => println!("{} {}", e.bright_purple(), i.bright_purple()),
+            Err(IrcError::IrcParseError(i, e)) => {
+                println!("{} {}", e.bright_purple(), i.bright_purple())
+            }
             Err(IrcError::Eof) => {
                 server.lock().unwrap().remove_user(&user);
                 println!("{} {}", "Client disconnected:".red(), addr);
@@ -84,7 +92,7 @@ fn handle_connection(server: SharedServerState, stream: TcpStream) -> io::Result
 }
 
 fn handle_message(user: &SharedUser, message: Message) {
-    use common::Command::*;
+    use Command::*;
 
     println!("rec < {message}");
     match message.command {
@@ -118,28 +126,28 @@ fn try_register_connection(
         }
         users.insert(user.nickname.clone(), shared_user.clone());
     }
-    let replies = vec![
-        user.create_reply(
+    let replies = [
+        (
             RPL_WELCOME,
-            &format!(
+            format!(
                 ":Welcome to the Internet Relay Network {}!{}@{}",
                 user.nickname, user.username, user.hostname
             ),
         ),
-        user.create_reply(
+        (
             RPL_YOURHOST,
-            &format!(
+            format!(
                 ":Your host is {}, running version {}",
                 "akiRC.fake.servername", "ver0"
             ),
         ),
-        user.create_reply(RPL_CREATED, &format!(":This server was created {}", "?")),
-        user.create_reply(
+        (RPL_CREATED, format!(":This server was created {}", "?")),
+        (
             RPL_MYINFO,
-            &format!(":{} {} {} {}", "akiRC.fake.servername", "ver0", "", ""),
+            format!(":{} {} {} {}", "akiRC.fake.servername", "ver0", "", ""),
         ),
     ];
-    user.send(&replies)?;
+    user.reply(&replies)?;
 
     Ok(true)
 }

@@ -10,7 +10,7 @@ use nom::{
     sequence::{delimited, preceded},
 };
 
-use crate::*;
+use crate::{message::{Command, Message}, IrcError};
 
 impl FromStr for Command {
     type Err = IrcError;
@@ -29,8 +29,8 @@ impl FromStr for Message {
 
         if matches!(message.command, Command::Invalid) {
             Err(IrcError::IrcParseError(
-                s.to_string(),
-                "unrecognized command".to_string(),
+                s.to_owned(),
+                String::from("unrecognized command"),
             ))
         } else {
             Ok(message)
@@ -42,20 +42,17 @@ pub fn parse_message(i: &str) -> Result<Message, IrcError> {
     let (_, (prefix, command, params)) = all_consuming((opt(prefix), command, params))
         .parse(i)
         .finish()
-        .map_err(|e| IrcError::IrcParseError(i.to_string(), e.to_string()))?;
+        .map_err(|e| IrcError::IrcParseError(i.to_owned(), e.to_string()))?;
 
     Ok(Message {
-        prefix,
-        command: Command::new(command, params),
+        prefix: prefix.map(|p| p.to_owned()),
+        command: Command::new(command, &params),
     })
 }
 
-fn prefix(i: &str) -> IResult<&str, String> {
+fn prefix(i: &str) -> IResult<&str, &str> {
     let servername = recognize(many1(none_of(" ")));
-    map(delimited(char(':'), servername, char(' ')), |s: &str| {
-        String::from(s)
-    })
-    .parse(i)
+    delimited(char(':'), servername, char(' ')).parse(i)
 }
 
 fn command(i: &str) -> IResult<&str, &str> {

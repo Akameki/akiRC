@@ -1,3 +1,7 @@
+mod command_parse;
+mod nom_extended;
+mod sub_parse;
+
 use std::str::FromStr;
 
 use nom::{
@@ -5,20 +9,16 @@ use nom::{
     branch::alt,
     bytes::complete::tag,
     character::complete::{alpha1, char, none_of, one_of},
-    combinator::{all_consuming, map, opt, recognize},
+    combinator::{all_consuming, opt, recognize},
     multi::{many_m_n, many0, many1},
     sequence::{delimited, preceded},
 };
 
-use crate::{message::{Command, Message}, IrcError};
-
-impl FromStr for Command {
-    type Err = IrcError;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        unimplemented!("Command::from_str not implemented: {s}")
-    }
-}
+use crate::{
+    IrcError,
+    message::{Command, Message},
+};
+use command_parse::parse_list;
 
 impl FromStr for Message {
     type Err = IrcError;
@@ -28,10 +28,10 @@ impl FromStr for Message {
         let message = parse_message(s)?;
 
         if matches!(message.command, Command::Invalid) {
-            Err(IrcError::IrcParseError(
-                s.to_owned(),
-                String::from("unrecognized command"),
-            ))
+            Err(IrcError::IrcParseError(format!(
+                "Unrecognized command {}",
+                s
+            )))
         } else {
             Ok(message)
         }
@@ -39,14 +39,28 @@ impl FromStr for Message {
 }
 
 pub fn parse_message(i: &str) -> Result<Message, IrcError> {
-    let (_, (prefix, command, params)) = all_consuming((opt(prefix), command, params))
+    let (_, (pref, cmd, params)) = all_consuming((opt(prefix), command, params))
         .parse(i)
         .finish()
-        .map_err(|e| IrcError::IrcParseError(i.to_owned(), e.to_string()))?;
+        .map_err(|e| IrcError::IrcParseError(format!("Error {} parsing {}", e, i)))?;
+
+    let prefix = pref.map(|p| p.to_owned());
+    let command = parse_command(cmd, &params)
+        .map_err(|e| {
+            if let IrcError::IrcParseError(e) = e {
+                IrcError::IrcParseError(format!(
+                    "While parsing message {},\nfailed to parse commmand {} with error {}",
+                    i, cmd, e
+                ))
+            } else {
+                unreachable!()
+            }
+        })
+        .unwrap();
 
     Ok(Message {
         prefix: prefix.map(|p| p.to_owned()),
-        command: Command::new(command, &params),
+        command,
     })
 }
 
@@ -77,4 +91,27 @@ fn params(i: &str) -> IResult<&str, Vec<&str>> {
         params.push(t);
     }
     Ok((i, params))
+}
+
+fn parse_command(cmd: &str, params: &[&str]) -> Result<Command, IrcError> {
+    use Command::*;
+
+    // let (cmd, params) = i;
+    let len = params.len();
+
+    let mut params_iter = params.iter().cloned();
+    /// Consumes the next &str in params_iter, returning it as an owned String.
+    /// Meant to be a "default" when formal parsing is not yet implemented.
+    macro_rules! req {
+        () => {
+            params_iter.next().unwrap().to_owned()
+        };
+    }
+    // TODO: validate parameters where needed
+    match cmd {
+        "NICK" => Ok(Nick(req!())),
+        "USER" if len >= 4 => Ok(User(req!(), req!(), req!(), req!())),
+        "LIST" => parse_list(params),
+        _ => Ok(Command::Invalid),
+    }
 }

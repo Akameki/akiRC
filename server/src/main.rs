@@ -59,8 +59,8 @@ fn handle_connection(server: SharedServerState, stream: TcpStream) -> io::Result
                 Command::Nick(..) | Command::User(..) => handle_message(&user, msg),
                 _ => println!("message from unregistered client {}", msg),
             },
-            Err(IrcError::IrcParseError(i, e)) => {
-                println!("{} {}", e.bright_purple(), i.bright_purple())
+            Err(IrcError::IrcParseError(e)) => {
+                println!("{}", e.bright_purple())
             }
             Err(IrcError::Eof) => {
                 println!("{} {}", "Unregistered client disconnected:".red(), addr);
@@ -78,8 +78,8 @@ fn handle_connection(server: SharedServerState, stream: TcpStream) -> io::Result
     loop {
         match blocking_read_message(&mut buf_reader, &mut buffer) {
             Ok(msg) => handle_message(&user, msg),
-            Err(IrcError::IrcParseError(i, e)) => {
-                println!("{} {}", e.bright_purple(), i.bright_purple())
+            Err(IrcError::IrcParseError(e)) => {
+                println!("{}", e.bright_purple())
             }
             Err(IrcError::Eof) => {
                 server.lock().unwrap().remove_user(&user);
@@ -94,12 +94,12 @@ fn handle_connection(server: SharedServerState, stream: TcpStream) -> io::Result
 fn handle_message(user: &SharedUser, message: Message) {
     use Command::*;
 
-    println!("rec < {message}");
     match message.command {
         Invalid => println!("???"),
         Numeric(_, _) => println!("ignoring numeric {message}"),
         Nick(nick) => user.lock().unwrap().nickname = nick,
         User(username, _, _, _) => user.lock().unwrap().username = username,
+        List(_, _) => println!("todo: on receive list."),
     }
 }
 

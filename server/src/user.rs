@@ -40,10 +40,7 @@ impl User {
         for (numeric, params) in replies {
             messages.push(Message::new(
                 Some(String::from("akiRC")),
-                Command::Numeric(
-                    *numeric,
-                    vec![self.nickname.to_owned(), params.to_owned()],
-                ),
+                Command::Numeric(*numeric, vec![self.nickname.to_owned(), params.to_owned()]),
             ))
         }
         self.send(&messages)

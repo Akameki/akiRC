@@ -7,19 +7,20 @@ pub struct Message {
     pub command: Command,
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub enum Command {
     // CAP
     /// `<nickname>``
     Nick(String),
     /// `<user> <mode> <unused> <realname>`
     User(String, String, String, String),
+    /// `[<channels> [target]]`
+    List(Option<Vec<String>>, Option<String>),
 
     Numeric(Numeric, Vec<String>),
 
     Invalid,
 }
-
 
 impl Message {
     pub fn new(prefix: Option<String>, command: Command) -> Self {
@@ -37,7 +38,7 @@ impl Command {
         macro_rules! req {
             () => {
                 params_iter.next().unwrap().to_owned()
-            }
+            };
         }
 
         match command {
@@ -49,7 +50,7 @@ impl Command {
 }
 
 #[allow(non_camel_case_types)]
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, PartialEq)]
 #[repr(u16)]
 pub enum Numeric {
     RPL_WELCOME = 1,
@@ -76,6 +77,7 @@ impl Display for Command {
             User(user, mode, unused, realname) => {
                 write!(f, "USER {} {} {} {}", user, mode, unused, realname)
             }
+            List(channels, target) => write!(f, "todo: Display for Command::List"),
             Numeric(numeric, params) => write!(f, "{:03} {}", *numeric as u16, params.join(" ")),
             Invalid => write!(f, "INVALID"),
         }

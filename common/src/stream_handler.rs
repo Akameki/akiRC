@@ -1,6 +1,6 @@
 use std::io::{self, BufRead};
 
-use crate::{message::Message, IrcError};
+use crate::{IrcError, message::Message};
 
 pub fn blocking_read_until_cr_or_lf<R: BufRead>(
     reader: &mut R,
@@ -8,10 +8,11 @@ pub fn blocking_read_until_cr_or_lf<R: BufRead>(
 ) -> io::Result<Option<String>> {
     loop {
         if let Some(pos_rn) = buffer.find(['\r', '\n']) {
-            let msg = buffer[..pos_rn].to_owned();
+            let line = buffer[..pos_rn].to_owned();
             *buffer = buffer[pos_rn + 1..].to_owned();
-            if !msg.is_empty() {
-                return Ok(Some(msg));
+            if !line.is_empty() {
+                println!("rec < {line}");
+                return Ok(Some(line));
             }
         } else if reader.read_line(buffer)? == 0 {
             return Ok(None); // EOF

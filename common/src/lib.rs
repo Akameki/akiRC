@@ -27,23 +27,23 @@ pub enum Command {
 
     Numeric(Numeric, Vec<String>),
 
-    Invalid(),
+    Invalid,
 }
 
 impl Command {
-    fn new(command: &str, params: Vec<String>) -> Self {
+    fn new(command: &str, params: Vec<&str>) -> Self {
         use Command::*;
 
         match command {
             // "CAP" => Command::CAP(params[0], params[1], params[2], params[3])
-            "NICK" => Nick(params[0].clone()),
+            "NICK" => Nick(String::from(params[0])),
             "USER" => User(
-                params[0].clone(),
-                params[1].clone(),
-                params[2].clone(),
-                params[3].clone(),
+                String::from(params[0]),
+                String::from(params[1]),
+                String::from(params[2]),
+                String::from(params[3]),
             ),
-            _ => Invalid(),
+            _ => Invalid,
         }
     }
 }
@@ -56,7 +56,7 @@ impl Display for Command {
                 write!(f, "USER {} {} {} {}", user, mode, unused, realname)
             }
             Numeric(numeric, params) => write!(f, "{:03} {}", *numeric as u16, params.join(" ")),
-            Invalid() => write!(f, "INVALID"),
+            Invalid => write!(f, "INVALID"),
         }
     }
 }
@@ -94,6 +94,8 @@ pub enum IrcError {
     Io(#[from] std::io::Error),
     #[error("EOF")]
     Eof,
-    #[error("Invalid IRC message: {0}")]
-    IrcParseError(String),
+    #[error("Error {1} parsing {0}")]
+    IrcParseError(String, String),
+    // #[error("Error {1} parsing {0}")]
+    // NomError(String, String),
 }

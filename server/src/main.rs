@@ -2,26 +2,27 @@ pub mod channel;
 pub mod server_state;
 pub mod user;
 
-use channel::SharedChannel;
-use dns_lookup::lookup_addr;
-use owo_colors::OwoColorize;
-use server_state::{ServerState, SharedServerState};
 use std::{
-    collections::HashMap,
     io::{self, BufReader},
     net::{TcpListener, TcpStream},
     sync::{Arc, Mutex},
     thread,
 };
 
-use common::*;
-use common::{Numeric::*, stream_handler::blocking_read_message};
-use user::{SharedUser, User};
+use dns_lookup::lookup_addr;
+use owo_colors::OwoColorize;
+
+use crate::{
+    server_state::{ServerState, SharedServerState},
+    user::{SharedUser, User},
+};
+
+use common::{Command, IrcError, Message, Numeric::*, stream_handler::blocking_read_message};
 
 fn main() {
     let server = Arc::new(Mutex::new(ServerState::new()));
     let listener = TcpListener::bind("0.0.0.0:9999").unwrap();
-    
+
     println!("{}", "akiRC server started!".underline());
     for stream in listener.incoming() {
         match stream {
@@ -54,7 +55,7 @@ fn handle_connection(server: SharedServerState, stream: TcpStream) -> io::Result
                 Command::Nick(..) | Command::User(..) => handle_message(&user, msg),
                 _ => println!("message from unregistered client {}", msg),
             },
-            Err(IrcError::IrcParseError(s)) => println!("{}", s.bright_purple()),
+            Err(IrcError::IrcParseError(i, e)) => println!("{} {}", e.bright_purple(), i.bright_purple()),
             Err(IrcError::Eof) => {
                 println!("{} {}", "Unregistered client disconnected:".red(), addr);
                 return Ok(());
@@ -64,12 +65,14 @@ fn handle_connection(server: SharedServerState, stream: TcpStream) -> io::Result
         registered = try_register_connection(&server, &user)?;
     }
 
-    { server.lock().unwrap().print_users(); }
+    {
+        server.lock().unwrap().print_users();
+    }
 
     loop {
         match blocking_read_message(&mut buf_reader, &mut buffer) {
             Ok(msg) => handle_message(&user, msg),
-            Err(IrcError::IrcParseError(s)) => println!("{}", s.bright_purple()),
+            Err(IrcError::IrcParseError(i, e)) => println!("{} {}", e.bright_purple(), i.bright_purple()),
             Err(IrcError::Eof) => {
                 server.lock().unwrap().remove_user(&user);
                 println!("{} {}", "Client disconnected:".red(), addr);
@@ -85,7 +88,7 @@ fn handle_message(user: &SharedUser, message: Message) {
 
     println!("rec < {message}");
     match message.command {
-        Invalid() => println!("???"),
+        Invalid => println!("???"),
         Numeric(_, _) => println!("ignoring numeric {message}"),
         Nick(nick) => user.lock().unwrap().nickname = nick,
         User(username, _, _, _) => user.lock().unwrap().username = username,

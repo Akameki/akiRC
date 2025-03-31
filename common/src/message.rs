@@ -58,6 +58,8 @@ pub enum Numeric {
     RPL_CREATED = 3,
     RPL_MYINFO = 4,
     RPL_BOUNCE = 5,
+
+    ERR_ALREADYREGISTERED = 462,
 }
 
 impl Display for Message {
@@ -77,7 +79,18 @@ impl Display for Command {
             User(user, mode, unused, realname) => {
                 write!(f, "USER {} {} {} {}", user, mode, unused, realname)
             }
-            List(channels, target) => write!(f, "todo: Display for Command::List"),
+            List(channels, target) => {
+                write!(f, "LIST")?;
+                if let Some(ch_str) = channels.as_ref().map(|chs| chs.join(",")) {
+                    if !ch_str.is_empty() {
+                        write!(f, " {}", ch_str)?;
+                    }
+                }
+                if let Some(t) = target {
+                    write!(f, " {}", t)?;
+                }
+                Ok(())
+            }
             Numeric(numeric, params) => write!(f, "{:03} {}", *numeric as u16, params.join(" ")),
             Invalid => write!(f, "INVALID"),
         }

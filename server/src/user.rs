@@ -7,7 +7,7 @@ use std::{
 use common::message::{Command, Message, Numeric};
 
 pub struct User {
-    pub stream: TcpStream,
+    pub stream: Arc<TcpStream>,
     pub username: String,
     pub nickname: String,
     pub hostname: String,
@@ -18,7 +18,7 @@ pub type SharedUser = Arc<Mutex<User>>;
 impl User {
     pub fn new(stream: TcpStream) -> Self {
         User {
-            stream,
+            stream: Arc::new(stream),
             username: String::new(),
             nickname: String::new(),
             hostname: String::new(),
@@ -32,7 +32,7 @@ impl User {
             write!(buffer, "{message}\r\n")?;
             println!("send > {message}");
         }
-        self.stream.write_all(&buffer)
+        self.stream.as_ref().write_all(&buffer)
     }
 
     pub fn reply(&mut self, replies: &[(Numeric, String)]) -> std::io::Result<()> {

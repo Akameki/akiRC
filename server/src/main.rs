@@ -1,6 +1,7 @@
-pub mod channel;
-pub mod server_state;
-pub mod user;
+mod channel;
+mod server_state;
+mod user;
+mod message_handling;
 
 use std::{
     io::{self, BufReader},

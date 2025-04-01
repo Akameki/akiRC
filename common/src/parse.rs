@@ -5,20 +5,16 @@ mod sub_parse;
 use std::str::FromStr;
 
 use nom::{
-    Finish, IResult, Parser,
-    branch::alt,
-    bytes::complete::tag,
-    character::complete::{alpha1, char, none_of, one_of},
-    combinator::{all_consuming, opt, recognize},
-    multi::{many_m_n, many0, many1},
-    sequence::{delimited, preceded},
+    branch::alt, bytes::complete::tag, character::complete::{alpha1, char, none_of, one_of}, combinator::{all_consuming, opt, recognize}, multi::{many0, many1, many_m_n}, sequence::{delimited, preceded}, Finish, IResult, Parser
 };
 
 use crate::{
     IrcError,
     message::{Command, Message},
 };
-use command_parse::parse_list;
+
+use sub_parse::space;
+use command_parse::parse_command;
 
 impl FromStr for Message {
     type Err = IrcError;
@@ -39,24 +35,24 @@ impl FromStr for Message {
 }
 
 pub fn parse_message(i: &str) -> Result<Message, IrcError> {
+    let i = i.trim();
     let (_, (pref, cmd, params)) = all_consuming((opt(prefix), command, params))
         .parse(i)
         .finish()
-        .map_err(|e| IrcError::IrcParseError(format!("Error {} parsing {}", e, i)))?;
+        .map_err(|e| IrcError::IrcParseError(format!("[{}] @ parse_message(\"{}\")", e, i)))?;
 
     let prefix = pref.map(|p| p.to_owned());
     let command = parse_command(cmd, &params)
         .map_err(|e| {
             if let IrcError::IrcParseError(e) = e {
                 IrcError::IrcParseError(format!(
-                    "While parsing message {},\nfailed to parse commmand {} with error {}",
+                    "While parsing message ({})...\nfailed to parse commmand {} with error {}",
                     i, cmd, e
                 ))
             } else {
                 unreachable!()
             }
-        })
-        .unwrap();
+        })?;
 
     Ok(Message {
         prefix: prefix.map(|p| p.to_owned()),
@@ -79,39 +75,47 @@ fn params(i: &str) -> IResult<&str, Vec<&str>> {
     let middle = recognize((nospcrlfcl, many0(alt((char(':'), none_of(spcrflcl))))));
     let trailing = recognize(many1(alt((one_of(" :"), none_of(spcrflcl)))));
 
-    let (i, mut params) = many_m_n(0, 14, preceded(char(' '), middle)).parse(i)?;
+    let (i, mut params) = many_m_n(0, 14, preceded(space, middle)).parse(i)?;
 
-    let tag = if params.len() == 14 {
-        tag(" :")
-    } else {
-        tag(" ")
+    let (i, trail) = if params.len() < 14 {
+        opt(preceded((space, tag(":")), trailing)).parse(i)?
+    } else { // : is optional
+        opt(preceded((space, opt(tag(":"))), trailing)).parse(i)?
     };
-    let (i, trail) = opt(preceded(tag, trailing)).parse(i)?;
     if let Some(t) = trail {
         params.push(t);
     }
     Ok((i, params))
 }
 
-fn parse_command(cmd: &str, params: &[&str]) -> Result<Command, IrcError> {
-    use Command::*;
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::message::Command;
 
-    // let (cmd, params) = i;
-    let len = params.len();
-
-    let mut params_iter = params.iter().cloned();
-    /// Consumes the next &str in params_iter, returning it as an owned String.
-    /// Meant to be a "default" when formal parsing is not yet implemented.
-    macro_rules! req {
-        () => {
-            params_iter.next().unwrap().to_owned()
-        };
+    macro_rules! stringvec {
+        ($($x:expr),*) => (vec![$($x.to_string()),*]);
     }
-    // TODO: validate parameters where needed
-    match cmd {
-        "NICK" => Ok(Nick(req!())),
-        "USER" if len >= 4 => Ok(User(req!(), req!(), req!(), req!())),
-        "LIST" => parse_list(params),
-        _ => Ok(Command::Invalid),
+
+    #[test]
+    fn test_parse_message() {
+        assert_eq!(
+            parse_message(":test!user@host NICK test").unwrap(),
+            Message::new(
+                Some("test!user@host"),
+                Command::Nick("test".to_string())
+            )
+        );
+        assert_eq!(
+            parse_message("NICK :test").unwrap(),
+            Message::new(None, Command::Nick("test".to_string()))
+        );
+        assert_eq!(
+            parse_message(":pref NICK test with extra").unwrap(),
+            Message::new(
+                Some("pref"),
+                Command::Nick("test".to_string())
+            )
+        );
     }
 }

@@ -1,51 +1,109 @@
 use std::io;
 
-use common::{
-    IrcError,
-    message::{Command, Message, Numeric::*},
-};
+use common::message::{Command, Message, Numeric::*};
 
-use crate::{server_state::SharedServerState, user::SharedUser};
+use crate::{channel::Channel, server_state::SharedServerState, user::SharedUser};
 
 /// Message handling AFTER connection registration/handshake
 pub fn handle_message(
     server: &SharedServerState,
     user: &SharedUser,
     message: Message,
-) -> Result<(), IrcError> {
+) -> io::Result<()> {
     use Command::*;
 
     match message.command {
         Nick(nick) => handle_nick(server, user, nick),
-        User(..) => Ok(user.lock().unwrap().reply(&[(
+        User(..) => Ok(user.lock().unwrap().reply(
             ERR_ALREADYREGISTERED,
-            ":Unauthorized command (already registered)".to_string(),
-        )])?),
+            ":Unauthorized command (already registered)",
+        )?),
+        Join(channels, keys, flag) => handle_join(server, user, channels, keys, flag),
         List(channels, target) => handle_list(server, user, channels, target),
+        Invalid | Numeric(..) => {
+            println!("ignoring unexpected message");
+            Ok(())
+        }
+    }?;
+    println!("handled!");
+    Ok(())
+}
 
-        Numeric(numeric, items) => todo!(),
-        Invalid => todo!(),
+// Individual command handlers follow below.
+// Ensure server lock is acquired before user lock.
+// Parameters prefixed with a_ are args for the command
+
+// Type aliasing for conciseness and flexibility for future changes
+type Sss = SharedServerState;
+type Su = SharedUser;
+type Res = io::Result<()>;
+
+fn handle_nick(sss: &Sss, su: &Su, a_nick: String) -> Res {
+    let mut server = sss.lock().unwrap();
+    let mut user = su.lock().unwrap();
+    if server.users.contains_key(&a_nick) {
+        drop(server);
+        user.reply(
+            ERR_NICKNAMEINUSE,
+            &format!("{} :Nickname is already in use", a_nick),
+        )
+    } else {
+        let target = {
+            let this = &user;
+            format!("{}!{}@{}", this.nickname, this.username, this.hostname)
+        };
+        server
+            .users
+            .remove(&user.nickname)
+            .expect("nick should be in ServerState");
+        server.users.insert(a_nick.clone(), su.clone());
+        user.nickname = a_nick.clone();
+        drop(user);
+        server.broadcast(&[Message::new(Some(&target), Command::Nick(a_nick))])
     }
 }
 
-fn handle_nick(
-    server: &SharedServerState,
-    user: &SharedUser,
-    nick: String,
-) -> Result<(), IrcError> {
-    let mut server = server.lock().unwrap();
-    todo!()
-
+fn handle_join(
+    sss: &Sss,
+    su: &Su,
+    a_channels: Vec<String>,
+    a_keys: Vec<String>,
+    a_flag: bool,
+) -> Res {
+    let mut server = sss.lock().unwrap();
+    let user = su.lock().unwrap();
+    // TODO: assuming just one channel for now
+    let channel_name = a_channels[0].clone();
+    let channel = server.channels.entry(channel_name.clone()).or_insert_with(|| Channel::new(channel_name.clone()));
+    channel.add_user(su);
+    let source = user.target_str();
+    drop(user);
+    let nicks = channel.get_user_nicks();
+    channel.broadcast(&Message::new(Some(&source), Command::Join(vec![channel_name.clone()], vec![], false)))?;
+    let user = su.lock().unwrap();
+    user.reply(RPL_NAMREPLY, &format!("= {} :{}", channel_name, nicks.join(" ")))?;
+    user.reply(RPL_ENDOFNAMES, &format!("{} :End of /NAMES list", channel_name))
 }
 
 fn handle_list(
-    server: &SharedServerState,
-    user: &SharedUser,
-    channels: Option<Vec<String>>,
-    target: Option<String>,
-) -> Result<(), IrcError> {
-    todo!()
+    sss: &Sss,
+    su: &Su,
+    a_channels: Option<Vec<String>>,
+    a_target: Option<String>,
+) -> Res {
+    let server = sss.lock().unwrap();
+    let user = su.lock().unwrap();
+    if a_channels.is_none() {
+        user.reply(RPL_LISTSTART, "Channel :Users  Name")?;
+        for ch in server.channels.values() {
+            user.reply(
+                RPL_LIST,
+                &format!("{} {} :{}", ch.name, ch.user_count(), ch.topic),
+            )?;
+        }
+        user.reply(RPL_LISTEND, ":End of /LIST")?;
+    } else {
+        todo!()
+    }
+    Ok(())
 }
-
-
-// 

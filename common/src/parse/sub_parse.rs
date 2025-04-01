@@ -1,11 +1,13 @@
 use nom::{
-    IResult, Parser,
-    branch::alt,
-    bytes::complete::take,
-    combinator::{recognize, verify},
+    branch::alt, bytes::complete::take, character::complete::{satisfy, space1}, combinator::{recognize, verify}, multi::many_m_n, IResult, Parser
 };
 
 use super::nom_extended::{str_one_of, take_until_one_of};
+
+// todo: consider not counting \t as space?
+pub fn space(i: &str) -> IResult<&str, &str> {
+    space1(i)
+}
 
 pub fn chanstring(i: &str) -> IResult<&str, &str> {
     take_until_one_of("\0\x07\r\n ,:")(i)
@@ -24,6 +26,13 @@ pub fn channel(i: &str) -> IResult<&str, &str> {
     ))
     .parse(i)
     // TODO: [:chanstring] mask
+}
+
+// "Other parameters"
+pub fn key(i: &str) -> IResult<&str, &str> {
+    let is_valid =
+        |c: char| matches!(c as u8, 0x01..=0x05 | 0x07..=0x08 | 0x0C | 0x0E..=0x1F | 0x21..=0x7F) && c!= ',';
+    recognize(many_m_n(1, 23, satisfy(is_valid))).parse(i)
 }
 
 #[cfg(test)]

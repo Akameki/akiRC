@@ -13,7 +13,6 @@ pub fn take_until_one_of(list: &str) -> impl FnMut(&str) -> IResult<&str, &str> 
     move |i: &str| recognize(many1(none_of(list))).parse(i)
 }
 
-/// tests
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -1,40 +1,55 @@
 use std::{
-    collections::HashMap,
-    sync::{Arc, Mutex},
+    collections::HashMap, io, sync::{Arc, Mutex}
 };
 
-use crate::{channel::SharedChannel, user::SharedUser};
+use common::message::Message;
+
+use crate::{channel::Channel, user::SharedUser};
 
 pub struct ServerState {
-    pub users: Arc<Mutex<HashMap<String, SharedUser>>>, // nick as key
-    pub channels: Arc<Mutex<HashMap<String, SharedChannel>>>, // name as key
+    pub users: HashMap<String, SharedUser>, // key=nick
+    pub channels: HashMap<String, Channel>, // key=name
 }
 pub type SharedServerState = Arc<Mutex<ServerState>>;
 
 impl ServerState {
     pub fn new() -> Self {
         ServerState {
-            users: Arc::new(Mutex::new(HashMap::new())),
-            channels: Arc::new(Mutex::new(HashMap::new())),
+            users: HashMap::new(),
+            channels: HashMap::new(),
         }
     }
 
     pub fn remove_user(&mut self, user: &SharedUser) -> Option<SharedUser> {
-        let mut users_locked = self.users.lock().unwrap();
         let nick = &user.lock().unwrap().nickname;
 
-        if let Some(stored_user) = users_locked.get(nick) {
-            if Arc::ptr_eq(user, stored_user) {
-                return users_locked.remove(nick);
+        if let Some(stored_user) = self.users.get(nick) {
+            if Arc::ptr_eq(user, stored_user) { // sanity check
+                return self.users.remove(nick);
+            } else {
+                eprintln!("{user:?}'s nick {nick} maps to a different User in ServerState: {stored_user:?}");
             }
         }
         None
     }
 
+    /// Send one or more messages to all connected users.
+    /// Caller must release any locks on SharedUsers.
+    pub fn broadcast(&mut self, messages: &[Message]) -> io::Result<()> {
+        let message_refs: Vec<&Message> = messages.iter().collect();
+        for user in self.users.values() {
+            user.lock().unwrap().send(&message_refs)?;
+        }
+        Ok(())
+    }
+
+
+
+    // functions for debugging
+
     pub fn print_users(&self) {
-        let users = self.users.lock().unwrap();
         println!("current users: ");
-        users.keys().for_each(|n| println!("  - {n}"));
+        self.users.keys().for_each(|n| println!("  - {n}"));
     }
 }
 

@@ -1,6 +1,6 @@
 use std::fmt::Display;
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub struct Message {
     // tags
     pub prefix: Option<String>,
@@ -14,6 +14,8 @@ pub enum Command {
     Nick(String),
     /// `<user> <mode> <unused> <realname>`
     User(String, String, String, String),
+    /// `<channels> [keys]`, `0 flag`
+    Join(Vec<String>, Vec<String>, bool),
     /// `[<channels> [target]]`
     List(Option<Vec<String>>, Option<String>),
 
@@ -23,8 +25,8 @@ pub enum Command {
 }
 
 impl Message {
-    pub fn new(prefix: Option<String>, command: Command) -> Self {
-        Message { prefix, command }
+    pub fn new(prefix: Option<&str>, command: Command) -> Self {
+        Message { prefix: prefix.map(|s| s.to_string()), command }
     }
 }
 
@@ -59,6 +61,17 @@ pub enum Numeric {
     RPL_MYINFO = 4,
     RPL_BOUNCE = 5,
 
+    RPL_LISTSTART = 321,
+    RPL_LIST = 322,
+    RPL_LISTEND = 323,
+
+    // RPL_TOPIC = 332,
+    // RPL_TOPICWHOTIME = 333,
+
+    RPL_NAMREPLY = 353,
+    RPL_ENDOFNAMES = 366,
+
+    ERR_NICKNAMEINUSE = 433,
     ERR_ALREADYREGISTERED = 462,
 }
 
@@ -78,6 +91,13 @@ impl Display for Command {
             Nick(nick) => write!(f, "NICK {}", nick),
             User(user, mode, unused, realname) => {
                 write!(f, "USER {} {} {} {}", user, mode, unused, realname)
+            }
+            Join(channels, keys, flag) => {
+                if *flag {
+                    write!(f, "JOIN 0")
+                } else {
+                    write!(f, "{}", ["JOIN".to_string(), channels.join(","), keys.join(",")].join(" "))
+                }
             }
             List(channels, target) => {
                 write!(f, "LIST")?;

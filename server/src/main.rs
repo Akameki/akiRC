@@ -11,6 +11,7 @@ use std::{
 };
 
 use dns_lookup::lookup_addr;
+use message_handling::handle_message;
 use owo_colors::OwoColorize;
 
 use crate::{
@@ -20,7 +21,7 @@ use crate::{
 
 use common::{
     IrcError,
-    message::{Command, Message, Numeric::*},
+    message::{Command, Numeric::*},
     stream_handler::blocking_read_message,
 };
 
@@ -57,12 +58,11 @@ fn handle_connection(server: SharedServerState, stream: TcpStream) -> io::Result
     while !registered {
         match blocking_read_message(&mut buf_reader, &mut buffer) {
             Ok(msg) => match msg.command {
-                Command::Nick(..) | Command::User(..) => handle_message(&user, msg),
+                Command::Nick(nick) => user.lock().unwrap().nickname = nick,
+                Command::User(username, mode, _, realname) => user.lock().unwrap().username = username,
                 _ => println!("message from unregistered client {}", msg),
             },
-            Err(IrcError::IrcParseError(e)) => {
-                println!("{}", e.bright_purple())
-            }
+            Err(IrcError::IrcParseError(e)) => println!("{}", e.bright_purple()),
             Err(IrcError::Eof) => {
                 println!("{} {}", "Unregistered client disconnected:".red(), addr);
                 return Ok(());
@@ -72,15 +72,14 @@ fn handle_connection(server: SharedServerState, stream: TcpStream) -> io::Result
         registered = try_register_connection(&server, &user)?;
     }
 
-    {
-        server.lock().unwrap().print_users();
-    }
+    {server.lock().unwrap().print_users();}
 
     loop {
         match blocking_read_message(&mut buf_reader, &mut buffer) {
-            Ok(msg) => handle_message(&user, msg),
+            Ok(msg) => handle_message(&server, &user, msg)?,
             Err(IrcError::IrcParseError(e)) => {
-                println!("{}", e.bright_purple())
+                println!("{}", e.bright_purple());
+                continue;
             }
             Err(IrcError::Eof) => {
                 server.lock().unwrap().remove_user(&user);
@@ -89,18 +88,6 @@ fn handle_connection(server: SharedServerState, stream: TcpStream) -> io::Result
             }
             Err(IrcError::Io(e)) => return Err(e),
         }
-    }
-}
-
-fn handle_message(user: &SharedUser, message: Message) {
-    use Command::*;
-
-    match message.command {
-        Invalid => println!("???"),
-        Numeric(_, _) => println!("ignoring numeric {message}"),
-        Nick(nick) => user.lock().unwrap().nickname = nick,
-        User(username, _, _, _) => user.lock().unwrap().username = username,
-        List(_, _) => println!("todo: on receive list."),
     }
 }
 
@@ -115,9 +102,8 @@ fn try_register_connection(
     let ip = &user.stream.peer_addr()?.ip();
     user.hostname = lookup_addr(ip).unwrap_or(ip.to_string());
     {
-        let server = server.lock().unwrap();
-        let mut users = server.users.lock().unwrap();
-        if users.contains_key(&user.nickname) {
+        let mut server_lock = server.lock().unwrap();
+        if server_lock.users.contains_key(&user.nickname) {
             // TODO: handle nick in use
             println!(
                 "user {} tried joining with taken nick {}",
@@ -125,7 +111,7 @@ fn try_register_connection(
             );
             return Ok(false);
         }
-        users.insert(user.nickname.clone(), shared_user.clone());
+        server_lock.users.insert(user.nickname.clone(), shared_user.clone());
     }
     let replies = [
         (
@@ -148,7 +134,7 @@ fn try_register_connection(
             format!(":{} {} {} {}", "akiRC.fake.servername", "ver0", "", ""),
         ),
     ];
-    user.reply(&replies)?;
+    user.reply_multiple(&replies)?;
 
     Ok(true)
 }

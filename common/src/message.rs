@@ -26,7 +26,10 @@ pub enum Command {
 
 impl Message {
     pub fn new(prefix: Option<&str>, command: Command) -> Self {
-        Message { prefix: prefix.map(|s| s.to_string()), command }
+        Message {
+            prefix: prefix.map(|s| s.to_string()),
+            command,
+        }
     }
 }
 
@@ -67,7 +70,6 @@ pub enum Numeric {
 
     // RPL_TOPIC = 332,
     // RPL_TOPICWHOTIME = 333,
-
     RPL_NAMREPLY = 353,
     RPL_ENDOFNAMES = 366,
 
@@ -96,7 +98,11 @@ impl Display for Command {
                 if *flag {
                     write!(f, "JOIN 0")
                 } else {
-                    write!(f, "{}", ["JOIN".to_string(), channels.join(","), keys.join(",")].join(" "))
+                    write!(
+                        f,
+                        "{}",
+                        ["JOIN".to_string(), channels.join(","), keys.join(",")].join(" ")
+                    )
                 }
             }
             List(channels, target) => {

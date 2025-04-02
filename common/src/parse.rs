@@ -5,7 +5,13 @@ mod sub_parse;
 use std::str::FromStr;
 
 use nom::{
-    branch::alt, bytes::complete::tag, character::complete::{alpha1, char, none_of, one_of}, combinator::{all_consuming, opt, recognize}, multi::{many0, many1, many_m_n}, sequence::{delimited, preceded}, Finish, IResult, Parser
+    Finish, IResult, Parser,
+    branch::alt,
+    bytes::complete::tag,
+    character::complete::{alpha1, char, none_of, one_of},
+    combinator::{all_consuming, opt, recognize},
+    multi::{many_m_n, many0, many1},
+    sequence::{delimited, preceded},
 };
 
 use crate::{
@@ -13,8 +19,8 @@ use crate::{
     message::{Command, Message},
 };
 
-use sub_parse::space;
 use command_parse::parse_command;
+use sub_parse::space;
 
 impl FromStr for Message {
     type Err = IrcError;
@@ -42,17 +48,16 @@ pub fn parse_message(i: &str) -> Result<Message, IrcError> {
         .map_err(|e| IrcError::IrcParseError(format!("[{}] @ parse_message(\"{}\")", e, i)))?;
 
     let prefix = pref.map(|p| p.to_owned());
-    let command = parse_command(cmd, &params)
-        .map_err(|e| {
-            if let IrcError::IrcParseError(e) = e {
-                IrcError::IrcParseError(format!(
-                    "While parsing message ({})...\nfailed to parse commmand {} with error {}",
-                    i, cmd, e
-                ))
-            } else {
-                unreachable!()
-            }
-        })?;
+    let command = parse_command(cmd, &params).map_err(|e| {
+        if let IrcError::IrcParseError(e) = e {
+            IrcError::IrcParseError(format!(
+                "While parsing message ({})...\nfailed to parse commmand {} with error {}",
+                i, cmd, e
+            ))
+        } else {
+            unreachable!()
+        }
+    })?;
 
     Ok(Message {
         prefix: prefix.map(|p| p.to_owned()),
@@ -79,7 +84,8 @@ fn params(i: &str) -> IResult<&str, Vec<&str>> {
 
     let (i, trail) = if params.len() < 14 {
         opt(preceded((space, tag(":")), trailing)).parse(i)?
-    } else { // : is optional
+    } else {
+        // : is optional
         opt(preceded((space, opt(tag(":"))), trailing)).parse(i)?
     };
     if let Some(t) = trail {
@@ -101,10 +107,7 @@ mod tests {
     fn test_parse_message() {
         assert_eq!(
             parse_message(":test!user@host NICK test").unwrap(),
-            Message::new(
-                Some("test!user@host"),
-                Command::Nick("test".to_string())
-            )
+            Message::new(Some("test!user@host"), Command::Nick("test".to_string()))
         );
         assert_eq!(
             parse_message("NICK :test").unwrap(),
@@ -112,10 +115,7 @@ mod tests {
         );
         assert_eq!(
             parse_message(":pref NICK test with extra").unwrap(),
-            Message::new(
-                Some("pref"),
-                Command::Nick("test".to_string())
-            )
+            Message::new(Some("pref"), Command::Nick("test".to_string()))
         );
     }
 }

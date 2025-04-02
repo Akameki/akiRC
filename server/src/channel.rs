@@ -1,5 +1,8 @@
 use std::{
-    collections::HashSet, hash::Hash, io, sync::{Arc, Mutex, Weak}
+    collections::HashSet,
+    hash::Hash,
+    io,
+    sync::{Arc, Mutex, Weak},
 };
 
 use common::message::Message;
@@ -42,7 +45,7 @@ impl Channel {
         // or also can encapsulate clean-up into ServerState.
         self.users.len()
     }
-    
+
     pub fn add_user(&mut self, user: &SharedUser) -> bool {
         self.users.insert(WeakMutexUser(Arc::downgrade(user)))
     }

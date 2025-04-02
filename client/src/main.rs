@@ -1,5 +1,8 @@
-use std::{io::{stdin, BufRead, BufReader, Write}, net::TcpStream};
 use owo_colors::{self, OwoColorize};
+use std::{
+    io::{BufRead, BufReader, Write, stdin},
+    net::TcpStream,
+};
 
 // CLI program that sends and receives text to a TcpStream.
 fn main() {
@@ -29,5 +32,4 @@ fn main() {
         }
         input.clear();
     }
-
 }

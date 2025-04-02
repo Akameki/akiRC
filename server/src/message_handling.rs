@@ -2,7 +2,7 @@ use std::io;
 
 use common::message::{Command, Message, Numeric::*};
 
-use crate::{channel::Channel, server_state::SharedServerState, user::SharedUser};
+use crate::{server_state::SharedServerState, user::SharedUser};
 
 /// Message handling AFTER connection registration/handshake
 pub fn handle_message(

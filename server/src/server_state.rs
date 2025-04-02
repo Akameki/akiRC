@@ -28,25 +28,28 @@ impl ServerState {
 
     /// Outside of impl ServerState, this should only be called at most once per SharedUser.
     /// Panics if user is locked.
-    pub fn register_user(&mut self, user: &SharedUser) {
+    pub fn insert_user(&mut self, user: &SharedUser) {
         let nick = &user.try_lock().unwrap().nickname;
-        assert!(!self.users.contains_key(nick));
+        assert!(!self.contains_nick(nick));
         self.users.insert(nick.to_owned(), user.clone());
     }
     pub fn try_update_nick(&mut self, user: &SharedUser, new_nick: &str) -> bool {
-        if self.users.contains_key(new_nick) {
+        if self.contains_nick(new_nick) {
             false
         } else {
             self.remove_user(user);
             user.try_lock().unwrap().nickname = new_nick.to_owned();
-            self.register_user(user);
+            self.insert_user(user);
             true
         }
     }
     /// Outside of impl ServerState, this should only be called when cleaning up a disconnect.
     /// Panics if user is locked.
     pub fn remove_user(&mut self, user: &SharedUser) {
-        self.users.remove(&user.lock().unwrap().nickname).unwrap();
+        if !user.lock().unwrap().nickname.is_empty() {
+            self.users.remove(&user.lock().unwrap().nickname).unwrap();
+            // todo: remove from channels
+        }
     }
     pub fn get_channel(&mut self, name: &str) -> Option<&mut Channel> {
         self.channels.get_mut(name)
@@ -61,7 +64,8 @@ impl ServerState {
     /// Returns &mut to new Channel. Panics if channel already exists.
     pub fn create_channel(&mut self, name: &str) -> &mut Channel {
         assert!(!self.channels.contains_key(name));
-        self.channels.insert(name.to_owned(), Channel::new(name.to_owned()));
+        self.channels
+            .insert(name.to_owned(), Channel::new(name.to_owned()));
         self.channels.get_mut(name).unwrap()
     }
 
@@ -70,16 +74,12 @@ impl ServerState {
     pub fn broadcast(&mut self, messages: &[Message]) -> io::Result<()> {
         let message_refs: Vec<&Message> = messages.iter().collect();
         for user in self.users.values() {
-            user.lock().unwrap().send(&message_refs)?;
+            let user = user.lock().unwrap();
+            if user.registered {
+                user.send(&message_refs)?;
+            }
         }
         Ok(())
-    }
-
-    // functions for debugging
-
-    pub fn print_users(&self) {
-        println!("current users: ");
-        self.users.keys().for_each(|n| println!("  - {n}"));
     }
 }
 

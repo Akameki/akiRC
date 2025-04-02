@@ -1,4 +1,4 @@
-use nom::{bytes::complete::tag, combinator::all_consuming, multi::separated_list1, Parser};
+use nom::{Parser, bytes::complete::tag, combinator::all_consuming, multi::separated_list1};
 
 use crate::{IrcError, message::Command};
 
@@ -49,7 +49,7 @@ pub fn parse_list(ps: &[&str]) -> Result<Command, IrcError> {
     let mut channels = None;
     let target = None;
     if !ps.is_empty() {
-        let (_, chs) = all_consuming( separated_list1(tag(","), channel)).parse(ps[0])?;
+        let (_, chs) = all_consuming(separated_list1(tag(","), channel)).parse(ps[0])?;
         channels = Some(chs.into_iter().map(|x| x.to_string()).collect());
     }
 
@@ -72,9 +72,16 @@ mod tests {
         );
         assert_eq!(
             parse_join(&["#chan1,#chan2,#chan3", "key1,key2"]).unwrap(),
-            Command::Join(stringvec!["#chan1", "#chan2", "#chan3"], stringvec!["key1", "key2"], false)
+            Command::Join(
+                stringvec!["#chan1", "#chan2", "#chan3"],
+                stringvec!["key1", "key2"],
+                false
+            )
         );
-        assert_eq!(parse_join(&["0"]).unwrap(), Command::Join(vec![], vec![], true));
+        assert_eq!(
+            parse_join(&["0"]).unwrap(),
+            Command::Join(vec![], vec![], true)
+        );
         assert!(parse_join(&[]).is_err());
         assert!(parse_join(&["uh"]).is_err());
     }

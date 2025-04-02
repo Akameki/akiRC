@@ -14,6 +14,7 @@ pub struct ServerState {
 }
 pub type SharedServerState = Arc<Mutex<ServerState>>;
 
+// functions panic if a SharedUser that requires locking is already locked.
 impl ServerState {
     pub fn new() -> Self {
         ServerState {
@@ -26,28 +27,24 @@ impl ServerState {
         self.users.contains_key(nick)
     }
 
-    /// Outside of impl ServerState, this should only be called at most once per SharedUser.
-    /// Panics if user is locked.
-    pub fn insert_user(&mut self, user: &SharedUser) {
-        let nick = &user.try_lock().unwrap().nickname;
+    /// Only use in main.rs
+    pub fn insert_user(&mut self, nick: &str, user: &SharedUser) {
         assert!(!self.contains_nick(nick));
         self.users.insert(nick.to_owned(), user.clone());
     }
     pub fn try_update_nick(&mut self, user: &SharedUser, new_nick: &str) -> bool {
         if self.contains_nick(new_nick) {
-            false
-        } else {
-            self.remove_user(user);
-            user.try_lock().unwrap().nickname = new_nick.to_owned();
-            self.insert_user(user);
-            true
+            return false;
         }
+        self.remove_user(user);
+        user.try_lock().unwrap().nickname = new_nick.to_owned();
+        self.insert_user(new_nick, user);
+        true
     }
-    /// Outside of impl ServerState, this should only be called when cleaning up a disconnect.
-    /// Panics if user is locked.
+    /// Only use in main.rs
     pub fn remove_user(&mut self, user: &SharedUser) {
-        if !user.lock().unwrap().nickname.is_empty() {
-            self.users.remove(&user.lock().unwrap().nickname).unwrap();
+        if !user.try_lock().unwrap().nickname.is_empty() {
+            self.users.remove(&user.try_lock().unwrap().nickname).unwrap();
             // todo: remove from channels
         }
     }
@@ -74,7 +71,7 @@ impl ServerState {
     pub fn broadcast(&mut self, messages: &[Message]) -> io::Result<()> {
         let message_refs: Vec<&Message> = messages.iter().collect();
         for user in self.users.values() {
-            let user = user.lock().unwrap();
+            let user = user.try_lock().unwrap();
             if user.registered {
                 user.send(&message_refs)?;
             }

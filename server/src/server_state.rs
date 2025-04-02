@@ -26,6 +26,9 @@ impl ServerState {
     pub fn contains_nick(&self, nick: &str) -> bool {
         self.users.contains_key(nick)
     }
+    pub fn get_user(&self, nick: &str) -> Option<&SharedUser> {
+        self.users.get(nick)
+    }
 
     /// Only use in main.rs
     pub fn insert_user(&mut self, nick: &str, user: &SharedUser) {
@@ -48,7 +51,14 @@ impl ServerState {
             // todo: remove from channels
         }
     }
-    pub fn get_channel(&mut self, name: &str) -> Option<&mut Channel> {
+
+    pub fn get_channel_names(&self) -> Vec<String> {
+        self.channels.keys().cloned().collect()
+    }
+    pub fn get_channel(&self, name: &str) -> Option<&Channel> {
+        self.channels.get(name)
+    }
+    pub fn get_channel_mut(&mut self, name: &str) -> Option<&mut Channel> {
         self.channels.get_mut(name)
     }
     // todo: rename?

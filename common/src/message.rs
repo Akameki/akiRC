@@ -9,18 +9,60 @@ pub struct Message {
 
 #[derive(Debug, PartialEq)]
 pub enum Command {
+    /* Connection Messages */
     // CAP
+    // AUTHENTICATE
+    // PASS
     /// `<nickname>``
     Nick(String),
     /// `<user> <mode> <unused> <realname>`
     User(String, String, String, String),
+    // PING
+    // PONG
+    // OPER
+    // QUIT
+    // ERROR
+    /* Channel Operations */    
     /// `<channels> [keys]`, `0 flag`
     Join(Vec<String>, Vec<String>, bool),
+    // PART
+    // TOPIC
+    // NAMES
     /// `[<channels> [target]]`
     List(Option<Vec<String>>, Option<String>),
+    // INVITE
+    // KICK
+    /* Server Queries and Commands */
+    // MOTD
+    // VERSION
+    // ADMIN
+    // CONNECT
+    // LUSERS
+    // TIME
+    // STATS
+    // HELP
+    // INFO
+    // MODE
+    /* Sending Messages */
+    // PRIVMSG
+    // NOTICE
+    /* User Based Queries */
+    WHO{mask: String},
+    // WHOIS
+    // WHOWAS
+    /* Operator Messages */
+    // KILL
+    // REHASH
+    // RESTART
+    // SQUIT
+    /* Optional Messages */
+    // AWAY
+    // LINKS
+    // USERHOST
+    // WALLOPS
 
+    /* Non client messages */
     Numeric(Numeric, Vec<String>),
-
     Invalid,
 }
 
@@ -33,26 +75,26 @@ impl Message {
     }
 }
 
-impl Command {
-    pub fn new(command: &str, params: &[&str]) -> Self {
-        use Command::*;
+// impl Command {
+//     pub fn new(command: &str, params: &[&str]) -> Self {
+//         use Command::*;
 
-        let len = params.len();
-        let mut params_iter = params.iter().cloned();
+//         let len = params.len();
+//         let mut params_iter = params.iter().cloned();
 
-        macro_rules! req {
-            () => {
-                params_iter.next().unwrap().to_owned()
-            };
-        }
+//         macro_rules! req {
+//             () => {
+//                 params_iter.next().unwrap().to_owned()
+//             };
+//         }
 
-        match command {
-            "NICK" => Nick(String::from(params[0])),
-            "USER" if len >= 4 => User(req!(), req!(), req!(), req!()),
-            _ => Invalid,
-        }
-    }
-}
+//         match command {
+//             "NICK" => Nick(String::from(params[0])),
+//             "USER" if len >= 4 => User(req!(), req!(), req!(), req!()),
+//             _ => Invalid,
+//         }
+//     }
+// }
 
 #[allow(non_camel_case_types)]
 #[derive(Debug, Copy, Clone, PartialEq)]
@@ -64,12 +106,15 @@ pub enum Numeric {
     RPL_MYINFO = 4,
     RPL_BOUNCE = 5,
 
+    RPL_ENDOFWHO = 315,
+
     RPL_LISTSTART = 321,
     RPL_LIST = 322,
     RPL_LISTEND = 323,
 
     // RPL_TOPIC = 332,
     // RPL_TOPICWHOTIME = 333,
+    RPL_WHOREPLY = 352,
     RPL_NAMREPLY = 353,
     RPL_ENDOFNAMES = 366,
 
@@ -117,6 +162,7 @@ impl Display for Command {
                 }
                 Ok(())
             }
+            WHO{mask} => write!(f, "WHO {}", mask),
             Numeric(numeric, params) => write!(f, "{:03} {}", *numeric as u16, params.join(" ")),
             Invalid => write!(f, "INVALID"),
         }

@@ -101,7 +101,7 @@ fn handle_message_and_try_register(
             }
         }
         Command::User(username, mode, _, realname) => {
-            user_lock.username = username;
+            user_lock.username = format!("~{username}");
             user_lock.realname = realname;
         }
         _ => println!("Ignoring message from unregistered user: ({})", message),

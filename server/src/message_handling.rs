@@ -20,6 +20,7 @@ pub fn handle_message(
         )?),
         Join(channels, keys, flag) => handle_join(server, user, channels, keys, flag),
         List(channels, target) => handle_list(server, user, channels, target),
+        WHO{mask} => handle_WHO(server, user, mask),
         Invalid | Numeric(..) => {
             println!("ignoring unexpected message");
             Ok(())
@@ -62,7 +63,7 @@ fn handle_join(
     let user = su.lock().unwrap();
     // TODO: assuming just one channel for now
     let channel_name = a_channels[0].clone();
-    let channel = if let Some(ch) = server.get_channel(&channel_name) {
+    let channel = if let Some(ch) = server.get_channel_mut(&channel_name) {
         ch
     } else {
         server.create_channel(&channel_name)
@@ -78,7 +79,7 @@ fn handle_join(
     let user = su.lock().unwrap();
     user.reply(
         RPL_NAMREPLY,
-        &format!("= {} :{}", channel_name, nicks.join(" ")),
+        &format!("= {} :{}", channel_name, nicks.join(" ")), // todo: message limit
     )?;
     user.reply(
         RPL_ENDOFNAMES,
@@ -107,4 +108,34 @@ fn handle_list(
         todo!()
     }
     Ok(())
+}
+
+fn handle_WHO(
+    sss: &Sss,
+    su: &Su,
+    mask: String,
+) -> Res {
+    let server = sss.lock().unwrap();
+    // let user = su.lock().unwrap();
+
+    if mask.starts_with("#") { // todo: other prefixes
+        if let Some(channel) = server.get_channel(&mask) {
+            for masked_user in channel.get_users() {
+                let reply = {
+                    let u = masked_user.lock().unwrap();
+                    format!("{} {} {} akiRC {} H :0 {}", mask, u.username, u.hostname, u.nickname, u.realname)
+                };
+                su.lock().unwrap().reply(RPL_WHOREPLY, &reply)?;
+            }
+        }
+    } else { // todo: user masks
+        if let Some(masked_user) = server.get_user(&mask) {
+            let reply = {
+                let u = masked_user.lock().unwrap();
+                format!("* {} {} akiRC {} H :0 {}", u.username, u.hostname, u.nickname, u.realname)
+            };
+            su.lock().unwrap().reply(RPL_WHOREPLY, &reply)?;
+        }
+    }
+    su.lock().unwrap().reply(RPL_ENDOFWHO, &format!("{} :End of WHO list", mask))
 }

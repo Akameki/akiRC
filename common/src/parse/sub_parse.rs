@@ -2,9 +2,10 @@ use nom::{
     IResult, Parser,
     branch::alt,
     bytes::complete::take,
-    character::complete::{satisfy, space1},
+    character::complete::{none_of, one_of, satisfy, space1},
     combinator::{recognize, verify},
-    multi::many_m_n,
+    multi::{many_m_n, many1},
+    sequence::{separated_pair, terminated},
 };
 
 use super::nom_extended::{str_one_of, take_until_one_of};
@@ -39,6 +40,15 @@ pub fn key(i: &str) -> IResult<&str, &str> {
         matches!(c as u8, 0x01..=0x05 | 0x07..=0x08 | 0x0C | 0x0E..=0x1F | 0x21..=0x7F) && c != ','
     };
     recognize(many_m_n(1, 23, satisfy(is_valid))).parse(i)
+}
+
+// "Wildcard Expressions" - the ABNF seems strange..
+pub fn mask(i: &str) -> IResult<&str, &str> {
+    recognize(many1(alt((
+        none_of("\0*?"),
+        terminated(none_of("\0\\"), one_of("?*")),
+    ))))
+    .parse(i)
 }
 
 #[cfg(test)]

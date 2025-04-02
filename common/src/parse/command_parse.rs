@@ -2,7 +2,7 @@ use nom::{Parser, bytes::complete::tag, combinator::all_consuming, multi::separa
 
 use crate::{IrcError, message::Command};
 
-use super::sub_parse::{channel, key};
+use super::sub_parse::{channel, key, mask};
 
 pub fn parse_command(cmd: &str, params: &[&str]) -> Result<Command, IrcError> {
     use Command::*;
@@ -24,6 +24,7 @@ pub fn parse_command(cmd: &str, params: &[&str]) -> Result<Command, IrcError> {
         "USER" if len >= 4 => Ok(User(req!(), req!(), req!(), req!())),
         "JOIN" => parse_join(params),
         "LIST" => parse_list(params),
+        "WHO" => parse_WHO(params),
         _ => Ok(Command::Invalid),
     }
 }
@@ -54,6 +55,15 @@ pub fn parse_list(ps: &[&str]) -> Result<Command, IrcError> {
     }
 
     Ok(Command::List(channels, target))
+}
+
+pub fn parse_WHO(ps: &[&str]) -> Result<Command, IrcError> {
+    if ps.is_empty() {
+        return Err(IrcError::IrcParseError("NEEDMOREPARAMS".to_string()));
+    }
+    let (_, mask) = all_consuming(mask).parse(ps[0])?;
+
+    Ok(Command::WHO{mask: mask.to_owned()})
 }
 
 #[cfg(test)]

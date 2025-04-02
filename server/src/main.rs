@@ -5,7 +5,7 @@ mod message_handling;
 
 use std::{
     io::{self, BufReader},
-    net::{TcpListener, TcpStream},
+    net::{SocketAddr, TcpListener, TcpStream},
     sync::{Arc, Mutex},
     thread,
 };
@@ -69,7 +69,7 @@ fn handle_connection(server: SharedServerState, stream: TcpStream) -> io::Result
             }
             Err(IrcError::Io(e)) => return Err(e),
         }
-        registered = try_register_connection(&server, &user)?;
+        registered = try_register_connection(&server, &user, &addr)?;
     }
 
     {server.lock().unwrap().print_users();}
@@ -94,16 +94,17 @@ fn handle_connection(server: SharedServerState, stream: TcpStream) -> io::Result
 fn try_register_connection(
     server: &SharedServerState,
     shared_user: &SharedUser,
+    addr: &SocketAddr,
 ) -> io::Result<bool> {
     let mut user = shared_user.lock().unwrap();
     if user.nickname.is_empty() || user.username.is_empty() {
         return Ok(false);
     }
-    let ip = &user.stream.peer_addr()?.ip();
-    user.hostname = lookup_addr(ip).unwrap_or(ip.to_string());
+    let ip = addr.ip();
+    user.hostname = lookup_addr(&ip).unwrap_or(ip.to_string());
     {
         let mut server_lock = server.lock().unwrap();
-        if server_lock.users.contains_key(&user.nickname) {
+        if server_lock.contains_nick(&user.nickname) {
             // TODO: handle nick in use
             println!(
                 "user {} tried joining with taken nick {}",
@@ -111,8 +112,10 @@ fn try_register_connection(
             );
             return Ok(false);
         }
-        server_lock.users.insert(user.nickname.clone(), shared_user.clone());
+        drop(user);
+        server_lock.register_user(&shared_user);
     }
+    let user = shared_user.lock().unwrap();
     let replies = [
         (
             RPL_WELCOME,

@@ -1,5 +1,7 @@
 use std::{
-    collections::HashMap, io, sync::{Arc, Mutex}
+    collections::HashMap,
+    io,
+    sync::{Arc, Mutex},
 };
 
 use common::message::Message;
@@ -7,8 +9,8 @@ use common::message::Message;
 use crate::{channel::Channel, user::SharedUser};
 
 pub struct ServerState {
-    pub users: HashMap<String, SharedUser>, // key=nick
-    pub channels: HashMap<String, Channel>, // key=name
+    users: HashMap<String, SharedUser>, // key=nick
+    channels: HashMap<String, Channel>, // key=name
 }
 pub type SharedServerState = Arc<Mutex<ServerState>>;
 
@@ -20,17 +22,47 @@ impl ServerState {
         }
     }
 
-    pub fn remove_user(&mut self, user: &SharedUser) -> Option<SharedUser> {
-        let nick = &user.lock().unwrap().nickname;
+    pub fn contains_nick(&self, nick: &str) -> bool {
+        self.users.contains_key(nick)
+    }
 
-        if let Some(stored_user) = self.users.get(nick) {
-            if Arc::ptr_eq(user, stored_user) { // sanity check
-                return self.users.remove(nick);
-            } else {
-                eprintln!("{user:?}'s nick {nick} maps to a different User in ServerState: {stored_user:?}");
-            }
+    /// Outside of impl ServerState, this should only be called at most once per SharedUser.
+    /// Panics if user is locked.
+    pub fn register_user(&mut self, user: &SharedUser) {
+        let nick = &user.try_lock().unwrap().nickname;
+        assert!(!self.users.contains_key(nick));
+        self.users.insert(nick.to_owned(), user.clone());
+    }
+    pub fn try_update_nick(&mut self, user: &SharedUser, new_nick: &str) -> bool {
+        if self.users.contains_key(new_nick) {
+            false
+        } else {
+            self.remove_user(user);
+            user.try_lock().unwrap().nickname = new_nick.to_owned();
+            self.register_user(user);
+            true
         }
-        None
+    }
+    /// Outside of impl ServerState, this should only be called when cleaning up a disconnect.
+    /// Panics if user is locked.
+    pub fn remove_user(&mut self, user: &SharedUser) {
+        self.users.remove(&user.lock().unwrap().nickname).unwrap();
+    }
+    pub fn get_channel(&mut self, name: &str) -> Option<&mut Channel> {
+        self.channels.get_mut(name)
+    }
+    // todo: rename?
+    pub fn get_channels(&self) -> impl Iterator<Item = &Channel> {
+        self.channels.values()
+    }
+    pub fn contains_channel(&self, name: &str) -> bool {
+        self.channels.contains_key(name)
+    }
+    /// Returns &mut to new Channel. Panics if channel already exists.
+    pub fn create_channel(&mut self, name: &str) -> &mut Channel {
+        assert!(!self.channels.contains_key(name));
+        self.channels.insert(name.to_owned(), Channel::new(name.to_owned()));
+        self.channels.get_mut(name).unwrap()
     }
 
     /// Send one or more messages to all connected users.
@@ -42,8 +74,6 @@ impl ServerState {
         }
         Ok(())
     }
-
-
 
     // functions for debugging
 

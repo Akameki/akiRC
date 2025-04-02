@@ -40,26 +40,14 @@ type Res = io::Result<()>;
 
 fn handle_nick(sss: &Sss, su: &Su, a_nick: String) -> Res {
     let mut server = sss.lock().unwrap();
-    let mut user = su.lock().unwrap();
-    if server.users.contains_key(&a_nick) {
-        drop(server);
-        user.reply(
+    if server.try_update_nick(su, &a_nick) {
+        let target = su.lock().unwrap().target_str();
+        server.broadcast(&[Message::new(Some(&target), Command::Nick(a_nick))])
+    } else {
+        su.lock().unwrap().reply(
             ERR_NICKNAMEINUSE,
             &format!("{} :Nickname is already in use", a_nick),
         )
-    } else {
-        let target = {
-            let this = &user;
-            format!("{}!{}@{}", this.nickname, this.username, this.hostname)
-        };
-        server
-            .users
-            .remove(&user.nickname)
-            .expect("nick should be in ServerState");
-        server.users.insert(a_nick.clone(), su.clone());
-        user.nickname = a_nick.clone();
-        drop(user);
-        server.broadcast(&[Message::new(Some(&target), Command::Nick(a_nick))])
     }
 }
 
@@ -74,15 +62,28 @@ fn handle_join(
     let user = su.lock().unwrap();
     // TODO: assuming just one channel for now
     let channel_name = a_channels[0].clone();
-    let channel = server.channels.entry(channel_name.clone()).or_insert_with(|| Channel::new(channel_name.clone()));
+    let channel = if let Some(ch) = server.get_channel(&channel_name) {
+        ch
+    } else {
+        server.create_channel(&channel_name)
+    };
     channel.add_user(su);
     let source = user.target_str();
     drop(user);
     let nicks = channel.get_user_nicks();
-    channel.broadcast(&Message::new(Some(&source), Command::Join(vec![channel_name.clone()], vec![], false)))?;
+    channel.broadcast(&Message::new(
+        Some(&source),
+        Command::Join(vec![channel_name.clone()], vec![], false),
+    ))?;
     let user = su.lock().unwrap();
-    user.reply(RPL_NAMREPLY, &format!("= {} :{}", channel_name, nicks.join(" ")))?;
-    user.reply(RPL_ENDOFNAMES, &format!("{} :End of /NAMES list", channel_name))
+    user.reply(
+        RPL_NAMREPLY,
+        &format!("= {} :{}", channel_name, nicks.join(" ")),
+    )?;
+    user.reply(
+        RPL_ENDOFNAMES,
+        &format!("{} :End of /NAMES list", channel_name),
+    )
 }
 
 fn handle_list(
@@ -95,7 +96,7 @@ fn handle_list(
     let user = su.lock().unwrap();
     if a_channels.is_none() {
         user.reply(RPL_LISTSTART, "Channel :Users  Name")?;
-        for ch in server.channels.values() {
+        for ch in server.get_channels() {
             user.reply(
                 RPL_LIST,
                 &format!("{} {} :{}", ch.name, ch.user_count(), ch.topic),

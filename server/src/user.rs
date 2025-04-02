@@ -7,7 +7,7 @@ use common::message::{Command, Message, Numeric};
 
 #[derive(Debug)]
 pub struct User {
-    pub stream: TcpStream,
+    stream: TcpStream,
     pub username: String,
     pub nickname: String,
     pub hostname: String,

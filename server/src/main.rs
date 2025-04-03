@@ -59,7 +59,7 @@ fn handle_connection(server: SharedServerState, stream: TcpStream) -> io::Result
     let mut registered = false;
 
     println!("(Looking up hostname)");
-    user.lock().unwrap().hostname = lookup_addr(&ip).unwrap_or(ip.to_string());
+    user.try_lock().unwrap().hostname = lookup_addr(&ip).unwrap_or(ip.to_string());
 
     loop {
         match blocking_read_message(&mut buf_reader, &mut buffer) {
@@ -82,19 +82,19 @@ fn handle_message_and_try_register(
     message: Message,
 ) -> io::Result<bool> {
     let mut server_lock = server.lock().unwrap();
-    let mut user_lock = user.lock().unwrap();
+    let mut user_lock = user.try_lock().unwrap();
 
     match message.command {
         Command::Nick(nick) => {
             if server_lock.contains_nick(&nick) {
-                if user_lock.nickname != nick {
-                    user.lock().unwrap().reply(
+                if user_lock.get_nickname() != nick {
+                    user_lock.reply(
                         ERR_NICKNAMEINUSE,
                         &format!("{} :Nickname is already in use", nick),
                     )?;
                 }
-            } else if user_lock.nickname.is_empty() {
-                user_lock.nickname = nick.clone();
+            } else if user_lock.get_nickname().is_empty() {
+                user_lock.set_nickname(&nick);
                 server_lock.insert_user(&nick, user);
             } else {
                 assert!(server_lock.try_update_nick(user, &nick));
@@ -107,7 +107,7 @@ fn handle_message_and_try_register(
         _ => println!("Ignoring message from unregistered user: ({})", message),
     }
 
-    if user_lock.username.is_empty() || user_lock.nickname.is_empty() {
+    if user_lock.username.is_empty() || user_lock.get_nickname().is_empty() {
         return Ok(false);
     }
 
@@ -116,7 +116,7 @@ fn handle_message_and_try_register(
 
     user_lock.reply_multiple(replies![
         RPL_WELCOME => ":Welcome to the Internet Relay Network {}!{}@{}",
-            user_lock.nickname, user_lock.username, user_lock.hostname;
+            user_lock.get_nickname(), user_lock.username, user_lock.hostname;
         RPL_YOURHOST => ":Your host is {}, running version {}",
             "akiRC.fake.servername", "ver0";
         RPL_CREATED => ":This server was created {}",

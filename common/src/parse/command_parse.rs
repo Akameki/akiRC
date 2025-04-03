@@ -1,8 +1,8 @@
-use nom::{Parser, bytes::complete::tag, combinator::all_consuming, multi::separated_list1};
+use nom::{bytes::complete::{tag, take_until1}, combinator::all_consuming, multi::separated_list1, Parser};
 
 use crate::{IrcError, message::Command};
 
-use super::sub_parse::{channel, key, mask};
+use super::sub_parse::{channel, key, mask, msgto};
 
 pub fn parse_command(cmd: &str, params: &[&str]) -> Result<Command, IrcError> {
     use Command::*;
@@ -25,6 +25,7 @@ pub fn parse_command(cmd: &str, params: &[&str]) -> Result<Command, IrcError> {
         "JOIN" => parse_join(params),
         "LIST" => parse_list(params),
         "WHO" => parse_WHO(params),
+        "PRIVMSG" => parse_PRIVMSG(params),
         _ => Ok(Command::Invalid),
     }
 }
@@ -64,6 +65,16 @@ pub fn parse_WHO(ps: &[&str]) -> Result<Command, IrcError> {
     let (_, mask) = all_consuming(mask).parse(ps[0])?;
 
     Ok(Command::WHO{mask: mask.to_owned()})
+}
+
+pub fn parse_PRIVMSG(ps: &[&str]) -> Result<Command, IrcError> {
+    if ps.len() < 2 {
+        return Err(IrcError::IrcParseError("NEEDMOREPARAMS".to_string()));
+    }
+    let (_, targets) = all_consuming(separated_list1(tag(","), msgto)).parse(ps[0])?;
+    let targets = targets.into_iter().map(|x| x.to_string()).collect();
+    let text = ps[1].to_owned();
+    Ok(Command::PRIVMSG{targets, text})
 }
 
 #[cfg(test)]

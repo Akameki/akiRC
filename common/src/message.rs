@@ -44,7 +44,7 @@ pub enum Command {
     // INFO
     // MODE
     /* Sending Messages */
-    // PRIVMSG
+    PRIVMSG{targets: Vec<String>, text: String},
     // NOTICE
     /* User Based Queries */
     WHO{mask: String},
@@ -118,6 +118,8 @@ pub enum Numeric {
     RPL_NAMREPLY = 353,
     RPL_ENDOFNAMES = 366,
 
+    ERR_NOSUCHNICK = 401,
+
     ERR_NICKNAMEINUSE = 433,
     ERR_ALREADYREGISTERED = 462,
 }
@@ -163,6 +165,7 @@ impl Display for Command {
                 Ok(())
             }
             WHO{mask} => write!(f, "WHO {}", mask),
+            PRIVMSG{ targets, text } => write!(f, "PRIVMSG {} :{}", targets.join(","), text),
             Numeric(numeric, params) => write!(f, "{:03} {}", *numeric as u16, params.join(" ")),
             Invalid => write!(f, "INVALID"),
         }

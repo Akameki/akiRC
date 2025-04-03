@@ -11,7 +11,7 @@ pub struct User {
     stream: TcpStream,
     pub registered: bool,
     pub username: String,
-    pub nickname: String,
+    nickname: String,
     pub hostname: String,
     pub realname: String,
     // pub channels: HashSet<Weak<Mutex<Channel>>>,
@@ -30,6 +30,13 @@ impl User {
             realname: String::new(),
             // channels: HashSet::new(),
         }
+    }
+
+    pub fn get_nickname(&self) -> String {
+        self.nickname.to_owned()
+    }
+    pub fn set_nickname(&mut self, nick: &str) {
+        self.nickname = nick.to_owned();
     }
 
     /// nickname!user@host

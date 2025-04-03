@@ -40,14 +40,14 @@ impl ServerState {
             return false;
         }
         self.remove_user(user);
-        user.try_lock().unwrap().nickname = new_nick.to_owned();
+        user.try_lock().unwrap().set_nickname(new_nick);
         self.insert_user(new_nick, user);
         true
     }
     /// Only use in main.rs
     pub fn remove_user(&mut self, user: &SharedUser) {
-        if !user.try_lock().unwrap().nickname.is_empty() {
-            self.users.remove(&user.try_lock().unwrap().nickname).unwrap();
+        if !user.try_lock().unwrap().get_nickname().is_empty() {
+            self.users.remove(&user.try_lock().unwrap().get_nickname()).unwrap();
             // todo: remove from channels
         }
     }

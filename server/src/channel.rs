@@ -31,14 +31,13 @@ impl Channel {
         self.users
             .iter()
             .filter_map(|user| user.0.upgrade())
-            .map(|user| user.lock().unwrap().nickname.clone())
+            .map(|user| user.lock().unwrap().get_nickname())
             .collect()
     }
-    pub fn get_users(&self) -> Vec<SharedUser> {
+    pub fn get_users(&self) -> impl Iterator<Item = SharedUser> {
         self.users
             .iter()
             .filter_map(|user| user.0.upgrade())
-            .collect()
     }
     pub fn user_count(&self) -> usize {
         // todo: should we worry about filtering dropped references if threads manually remove themselves?

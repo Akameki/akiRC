@@ -1,34 +1,29 @@
-use std::io;
+use std::{io, sync::Arc};
 
 use common::message::{Command, Message, Numeric::*};
 
 use crate::{server_state::SharedServerState, user::SharedUser};
 
 /// Message handling AFTER connection registration/handshake
-pub fn handle_message(
-    server: &SharedServerState,
-    user: &SharedUser,
-    message: Message,
-) -> io::Result<()> {
+pub async fn handle_message(server: &SharedServerState, user: &SharedUser, message: Message) {
     use Command::*;
 
     match message.command {
-        Nick(nick) => handle_nick(server, user, nick),
-        User(..) => Ok(user.try_lock().unwrap().reply(
-            ERR_ALREADYREGISTERED,
-            ":Unauthorized command (already registered)",
-        )?),
-        Join(channels, keys, flag) => handle_join(server, user, channels, keys, flag),
-        List(channels, target) => handle_list(server, user, channels, target),
-        WHO { mask } => handle_WHO(server, user, mask),
-        PRIVMSG { targets, text } => handle_PRIVMSG(server, user, targets, text),
-        Invalid | Numeric(..) => {
-            println!("ignoring unexpected message");
-            Ok(())
+        Nick(nick) => handle_nick(server, user, nick).await,
+        User(..) => {
+            user.reply(
+                ERR_ALREADYREGISTERED,
+                ":Unauthorized command (already registered)",
+            )
+            .await
         }
-    }?;
+        Join(channels, keys, flag) => handle_join(server, user, channels, keys, flag).await,
+        List(channels, target) => handle_list(server, user, channels, target).await,
+        WHO { mask } => handle_WHO(server, user, mask).await,
+        PRIVMSG { targets, text } => handle_PRIVMSG(server, user, targets, text).await,
+        Invalid | Numeric(..) => println!("ignoring unexpected message"),
+    };
     println!("handled!");
-    Ok(())
 }
 
 // Individual command handlers follow below.
@@ -38,30 +33,33 @@ pub fn handle_message(
 // Type aliasing for conciseness and flexibility for future changes
 type Sss = SharedServerState;
 type Su = SharedUser;
-type Res = io::Result<()>;
+type Res = ();
 
-fn handle_nick(sss: &Sss, su: &Su, a_nick: String) -> Res {
-    let mut server = sss.lock().unwrap();
+async fn handle_nick(sss: &Sss, su: &Su, a_nick: String) -> Res {
+    let mut server = sss.lock().await;
     if server.try_update_nick(su, &a_nick) {
-        let target = su.try_lock().unwrap().target_str();
-        server.broadcast(&[Message::new(Some(&target), Command::Nick(a_nick))])
+        let target = su.target_str();
+        server
+            .broadcast(Arc::new(Message::new(Some(&target), Command::Nick(a_nick))))
+            .await
     } else {
-        su.try_lock().unwrap().reply(
+        su.reply(
             ERR_NICKNAMEINUSE,
             &format!("{} :Nickname is already in use", a_nick),
         )
+        .await
     }
 }
 
-fn handle_join(
+async fn handle_join(
     sss: &Sss,
     su: &Su,
     a_channels: Vec<String>,
     a_keys: Vec<String>,
     a_flag: bool,
 ) -> Res {
-    let mut server = sss.lock().unwrap();
-    let user = su.try_lock().unwrap();
+    let mut server = sss.lock().await;
+    let user = su;
     // TODO: assuming just one channel for now
     let channel_name = a_channels[0].clone();
     let channel = if let Some(ch) = server.get_channel_mut(&channel_name) {
@@ -71,57 +69,59 @@ fn handle_join(
     };
     channel.add_user(su);
     let source = user.target_str();
-    drop(user);
     let nicks = channel.get_user_nicks();
-    channel.broadcast(&Message::new(
-        Some(&source),
-        Command::Join(vec![channel_name.clone()], vec![], false),
-    ))?;
-    let user = su.try_lock().unwrap();
+    channel
+        .broadcast(Arc::new(Message::new(
+            Some(&source),
+            Command::Join(vec![channel_name.clone()], vec![], false),
+        )))
+        .await;
+    let user = su;
     user.reply(
         RPL_NAMREPLY,
         &format!("= {} :{}", channel_name, nicks.join(" ")), // todo: message limit
-    )?;
+    )
+    .await;
     user.reply(
         RPL_ENDOFNAMES,
         &format!("{} :End of /NAMES list", channel_name),
     )
+    .await;
 }
 
-fn handle_list(
+async fn handle_list(
     sss: &Sss,
     su: &Su,
     a_channels: Option<Vec<String>>,
     a_target: Option<String>,
 ) -> Res {
-    let server = sss.lock().unwrap();
-    let user = su.try_lock().unwrap();
+    let server = sss.lock().await;
+    let user = su;
     if a_channels.is_none() {
-        user.reply(RPL_LISTSTART, "Channel :Users  Name")?;
+        user.reply(RPL_LISTSTART, "Channel :Users  Name").await;
         for ch in server.get_channels() {
             user.reply(
                 RPL_LIST,
                 &format!("{} {} :{}", ch.name, ch.user_count(), ch.topic),
-            )?;
+            )
+            .await;
         }
-        user.reply(RPL_LISTEND, ":End of /LIST")?;
+        user.reply(RPL_LISTEND, ":End of /LIST").await;
     } else {
         todo!()
     }
-    Ok(())
 }
 
 #[allow(non_snake_case)]
-fn handle_WHO(sss: &Sss, su: &Su, mask: String) -> Res {
-    let server = sss.lock().unwrap();
-    // let user = su.try_lock().unwrap();
+async fn handle_WHO(sss: &Sss, su: &Su, mask: String) -> Res {
+    let server = sss.lock().await;
 
     if mask.starts_with("#") {
         // todo: other prefixes
         if let Some(channel) = server.get_channel(&mask) {
             for masked_user in channel.get_users() {
                 let reply = {
-                    let u = masked_user.try_lock().unwrap();
+                    let u = masked_user;
                     format!(
                         "{} {} {} akiRC {} H :0 {}",
                         mask,
@@ -131,14 +131,14 @@ fn handle_WHO(sss: &Sss, su: &Su, mask: String) -> Res {
                         u.realname
                     )
                 };
-                su.try_lock().unwrap().reply(RPL_WHOREPLY, &reply)?;
+                su.reply(RPL_WHOREPLY, &reply).await;
             }
         }
     } else {
         // todo: user masks
         if let Some(masked_user) = server.get_user(&mask) {
             let reply = {
-                let u = masked_user.try_lock().unwrap();
+                let u = masked_user;
                 format!(
                     "* {} {} akiRC {} H :0 {}",
                     u.username,
@@ -147,39 +147,37 @@ fn handle_WHO(sss: &Sss, su: &Su, mask: String) -> Res {
                     u.realname
                 )
             };
-            su.try_lock().unwrap().reply(RPL_WHOREPLY, &reply)?;
+            su.reply(RPL_WHOREPLY, &reply).await;
         }
     }
-    su.try_lock()
-        .unwrap()
-        .reply(RPL_ENDOFWHO, &format!("{} :End of WHO list", mask))
+    su.reply(RPL_ENDOFWHO, &format!("{} :End of WHO list", mask))
+        .await;
 }
 
 #[allow(non_snake_case)]
-fn handle_PRIVMSG(sss: &Sss, su: &Su, targets: Vec<String>, text: String) -> Res {
-    let server = sss.lock().unwrap();
-    let nick = su.try_lock().unwrap().get_nickname();
-    
+async fn handle_PRIVMSG(sss: &Sss, su: &Su, targets: Vec<String>, text: String) -> Res {
+    let server = sss.lock().await;
+    let nick = su.get_nickname();
+
     for target in targets {
-        let success_msg = Message::new(
+        let success_msg = Arc::new(Message::new(
             Some(&nick),
             Command::PRIVMSG {
                 targets: vec![target.clone()],
                 text: text.to_owned(),
             },
-        );
+        ));
         if let Some(channel) = server.get_channel(&target) {
             for user in channel.get_users() {
-                let user_lock = user.try_lock().unwrap();
+                let user_lock = user;
                 if user_lock.get_nickname() != *nick {
-                    user_lock.send(&[&success_msg])?;
+                    user_lock.send(Arc::clone(&success_msg)).await;
                 }
             }
         } else if let Some(user) = server.get_user(&target) {
-            user.try_lock().unwrap().send(&[&success_msg])?;
+            user.send(Arc::clone(&success_msg)).await;
         } else {
-            su.try_lock().unwrap().reply(ERR_NOSUCHNICK, ":No such nick/channel")?;
+            su.reply(ERR_NOSUCHNICK, ":No such nick/channel").await;
         }
     }
-    Ok(())
 }

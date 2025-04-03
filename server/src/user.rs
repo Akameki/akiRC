@@ -1,81 +1,70 @@
-use std::{
-    io::Write,
-    net::TcpStream,
-    sync::{Arc, Mutex},
-};
+use std::sync::{Arc, Mutex};
 
 use common::message::{Command, Message, Numeric};
+use tokio::sync::mpsc;
 
 #[derive(Debug)]
 pub struct User {
-    stream: TcpStream,
-    pub registered: bool,
+    // stream: TcpStream,
+    tx: mpsc::Sender<Arc<Message>>,
+    nickname: Mutex<String>,
     pub username: String,
-    nickname: String,
     pub hostname: String,
     pub realname: String,
     // pub channels: HashSet<Weak<Mutex<Channel>>>,
 }
 /// MUST hold a lock on SharedServerState before any SharedUser can be locked.
-pub type SharedUser = Arc<Mutex<User>>;
+pub type SharedUser = Arc<User>;
 
 impl User {
-    pub fn new(stream: TcpStream) -> Self {
+    pub fn new(tx: mpsc::Sender<Arc<Message>>, hostname: String) -> Self {
         User {
-            stream,
-            registered: false,
+            tx,
+            nickname: Mutex::new(String::new()),
             username: String::new(),
-            nickname: String::new(),
-            hostname: String::new(),
+            hostname,
             realname: String::new(),
             // channels: HashSet::new(),
         }
     }
 
     pub fn get_nickname(&self) -> String {
-        self.nickname.to_owned()
+        self.nickname.lock().unwrap().to_owned()
     }
-    pub fn set_nickname(&mut self, nick: &str) {
-        self.nickname = nick.to_owned();
+    pub fn set_nickname(&self, nick: &str) {
+        *self.nickname.lock().unwrap() = nick.to_owned();
     }
 
     /// nickname!user@host
     pub fn target_str(&self) -> String {
-        format!("{}!{}@{}", self.nickname, self.username, self.hostname)
+        format!(
+            "{}!{}@{}",
+            self.get_nickname(),
+            self.username,
+            self.hostname
+        )
     }
 
-    pub fn send(&self, messages: &[&Message]) -> std::io::Result<()> {
-        let mut buffer = Vec::new();
-        for message in messages {
-            write!(buffer, "{message}\r\n")?;
-            println!("send > {message}");
-        }
-        (&self.stream).write_all(&buffer)
+    pub async fn send(&self, message: Arc<Message>) {
+        let _ = self.tx.send(message).await;
     }
 
     /// Write all parameters after the target as one string, including the trailing ":".
     /// It will all be represented as one parameter, though it should not matter for writing.
-    pub fn reply(&self, numeric: Numeric, params: &str) -> std::io::Result<()> {
-        self.reply_multiple(&[(numeric, params.to_owned())])
-    }
-    pub fn reply_multiple(&self, replies: &[(Numeric, String)]) -> std::io::Result<()> {
-        let mut messages = Vec::new();
-        for (numeric, params) in replies {
-            messages.push(Message::new(
-                Some("akiRC"),
-                Command::Numeric(*numeric, vec![self.nickname.to_owned(), params.to_string()]),
-            ))
-        }
-        let message_refs: Vec<&Message> = messages.iter().collect();
-        self.send(&message_refs)
+    pub async fn reply(&self, numeric: Numeric, params: &str) {
+        self.send(Arc::new(Message::new(
+            Some("akiRC"),
+            Command::Numeric(numeric, vec![self.get_nickname(), params.to_owned()]),
+        )))
+        .await;
     }
 }
 
-#[macro_export]
-/// Used for User::reply_multiple(). List each reply in this format:  
-/// `Numeric => format_string, ...args;`
-macro_rules! replies {
-    ($( $num:expr => $fmt:literal $(, $args:expr )* );* $(;)?) => {
-        &[$(($num, format!($fmt, $($args),*))),*]
-    };
-}
+// #[macro_export]
+// /// Used for User::reply_multiple(). List each reply in this format:
+// /// `Numeric => format_string, ...args;`
+// macro_rules! replies {
+//     ($( $num:expr => $fmt:literal $(, $args:expr )* );* $(;)?) => {
+//         &[$(($num, format!($fmt, $($args),*))),*]
+//     };
+// }

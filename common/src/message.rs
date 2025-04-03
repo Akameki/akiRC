@@ -7,6 +7,7 @@ pub struct Message {
     pub command: Command,
 }
 
+#[rustfmt::skip]
 #[derive(Debug, PartialEq)]
 pub enum Command {
     /* Connection Messages */
@@ -22,7 +23,7 @@ pub enum Command {
     // OPER
     // QUIT
     // ERROR
-    /* Channel Operations */    
+    /* Channel Operations */
     /// `<channels> [keys]`, `0 flag`
     Join(Vec<String>, Vec<String>, bool),
     // PART
@@ -44,10 +45,10 @@ pub enum Command {
     // INFO
     // MODE
     /* Sending Messages */
-    PRIVMSG{targets: Vec<String>, text: String},
+    PRIVMSG { targets: Vec<String>, text: String },
     // NOTICE
     /* User Based Queries */
-    WHO{mask: String},
+    WHO { mask: String },
     // WHOIS
     // WHOWAS
     /* Operator Messages */
@@ -100,12 +101,13 @@ impl Message {
 #[derive(Debug, Copy, Clone, PartialEq)]
 #[repr(u16)]
 pub enum Numeric {
+    // Client-Server Connections 001~099
     RPL_WELCOME = 1,
     RPL_YOURHOST = 2,
     RPL_CREATED = 3,
     RPL_MYINFO = 4,
     RPL_BOUNCE = 5,
-
+    // Command Replies 200 ~ 399
     RPL_ENDOFWHO = 315,
 
     RPL_LISTSTART = 321,
@@ -118,6 +120,7 @@ pub enum Numeric {
     RPL_NAMREPLY = 353,
     RPL_ENDOFNAMES = 366,
 
+    // Error Replies 400~509
     ERR_NOSUCHNICK = 401,
 
     ERR_NICKNAMEINUSE = 433,
@@ -164,8 +167,8 @@ impl Display for Command {
                 }
                 Ok(())
             }
-            WHO{mask} => write!(f, "WHO {}", mask),
-            PRIVMSG{ targets, text } => write!(f, "PRIVMSG {} :{}", targets.join(","), text),
+            WHO { mask } => write!(f, "WHO {}", mask),
+            PRIVMSG { targets, text } => write!(f, "PRIVMSG {} :{}", targets.join(","), text),
             Numeric(numeric, params) => write!(f, "{:03} {}", *numeric as u16, params.join(" ")),
             Invalid => write!(f, "INVALID"),
         }

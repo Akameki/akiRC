@@ -9,7 +9,7 @@ use common::message::Message;
 
 use crate::user::{SharedUser, User};
 
-struct WeakMutexUser(Weak<Mutex<User>>);
+struct WeakMutexUser(Weak<User>);
 pub struct Channel {
     pub name: String,
     pub topic: String,
@@ -31,13 +31,11 @@ impl Channel {
         self.users
             .iter()
             .filter_map(|user| user.0.upgrade())
-            .map(|user| user.lock().unwrap().get_nickname())
+            .map(|user| user.get_nickname())
             .collect()
     }
     pub fn get_users(&self) -> impl Iterator<Item = SharedUser> {
-        self.users
-            .iter()
-            .filter_map(|user| user.0.upgrade())
+        self.users.iter().filter_map(|user| user.0.upgrade())
     }
     pub fn user_count(&self) -> usize {
         // todo: should we worry about filtering dropped references if threads manually remove themselves?
@@ -52,13 +50,12 @@ impl Channel {
         self.users.remove(&WeakMutexUser(Arc::downgrade(user)))
     }
 
-    pub fn broadcast(&self, message: &Message) -> io::Result<()> {
+    pub async fn broadcast(&self, message: Arc<Message>) {
         for user in self.users.iter() {
             if let Some(user) = user.0.upgrade() {
-                user.lock().unwrap().send(&[message])?;
+                user.send(Arc::clone(&message)).await;
             }
         }
-        Ok(())
     }
 }
 

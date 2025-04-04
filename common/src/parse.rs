@@ -16,23 +16,12 @@ use nom::{
 };
 use sub_parse::space;
 
-use crate::{
-    IrcError,
-    message::{Command, Message},
-};
+use crate::{IrcError, message::Message};
 
 impl FromStr for Message {
     type Err = IrcError;
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        // let command = Command::new(cmd, params); // todo: use Command::from_str to parse args
-
-        let message = parse_message(s)?;
-
-        if matches!(message.command, Command::Invalid) {
-            Err(IrcError::IrcParseError(format!("Unrecognized command {}", s)))
-        } else {
-            Ok(message)
-        }
+        parse_message(s)
     }
 }
 
@@ -44,16 +33,7 @@ pub fn parse_message(i: &str) -> Result<Message, IrcError> {
         .map_err(|e| IrcError::IrcParseError(format!("[{}] @ parse_message(\"{}\")", e, i)))?;
 
     let prefix = pref.map(|p| p.to_owned());
-    let command = parse_command(cmd, &params).map_err(|e| {
-        if let IrcError::IrcParseError(e) = e {
-            IrcError::IrcParseError(format!(
-                "While parsing message ({})...\nfailed to parse commmand {} with error {}",
-                i, cmd, e
-            ))
-        } else {
-            unreachable!()
-        }
-    })?;
+    let command = parse_command(cmd, &params);
 
     Ok(Message { prefix: prefix.map(|p| p.to_owned()), command })
 }

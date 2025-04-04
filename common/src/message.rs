@@ -15,12 +15,14 @@ pub enum Command {
     // AUTHENTICATE
     // PASS
     NICK { nickname: String },
+    /// "!INVALID" is used as a sentinal value for invalid usernames.
     USER { username: String, _1: String, _2: String, realname: String },
     // PING
     // PONG
     // OPER
     // QUIT
     // ERROR
+
     /* Channel Operations */
     JOIN { channels: Vec<String>, keys: Vec<String>, alt: bool },
     // PART
@@ -40,18 +42,22 @@ pub enum Command {
     // HELP
     // INFO
     // MODE
+
     /* Sending Messages */
     PRIVMSG { targets: Vec<String>, text: String },
     // NOTICE
+
     /* User Based Queries */
     WHO { mask: String },
     // WHOIS
     // WHOWAS
+
     /* Operator Messages */
     // KILL
     // REHASH
     // RESTART
     // SQUIT
+
     /* Optional Messages */
     // AWAY
     // LINKS
@@ -60,7 +66,13 @@ pub enum Command {
 
     /* Non client messages */
     Numeric(Numeric, Vec<String>),
-    Invalid,
+
+    /// Represents an unknown command or command with invalid params.
+    /// Command name, Numeric reply, Numeric params
+    /// If contains Some(numeric), the user should be replied to with it.
+    Invalid(String, Option<Numeric>, String),
+    /// Contains the command and params for the server to send directly.
+    Raw(String),
 }
 
 impl Message {
@@ -81,11 +93,9 @@ pub enum Numeric {
     RPL_BOUNCE = 5,
     // Command Replies 200 ~ 399
     RPL_ENDOFWHO = 315,
-
     RPL_LISTSTART = 321,
     RPL_LIST = 322,
     RPL_LISTEND = 323,
-
     // RPL_TOPIC = 332,
     // RPL_TOPICWHOTIME = 333,
     RPL_WHOREPLY = 352,
@@ -94,8 +104,14 @@ pub enum Numeric {
 
     // Error Replies 400~509
     ERR_NOSUCHNICK = 401,
-
+    ERR_NOSUCHCHANNEL = 403,
+    ERR_NORECIPIENT = 411,
+    ERR_NOTEXTTOSEND = 412,
+    ERR_UNKNOWNCOMMAND = 421,
+    ERR_NONICKNAMEGIVEN = 431,
+    ERR_ERRONEUSNICKNAME = 432,
     ERR_NICKNAMEINUSE = 433,
+    ERR_NEEDMOREPARAMS = 461,
     ERR_ALREADYREGISTERED = 462,
 }
 
@@ -140,7 +156,10 @@ impl Display for Command {
             WHO { mask } => write!(f, "WHO {}", mask),
             PRIVMSG { targets, text } => write!(f, "PRIVMSG {} :{}", targets.join(","), text),
             Numeric(numeric, params) => write!(f, "{:03} {}", *numeric as u16, params.join(" ")),
-            Invalid => write!(f, "INVALID"),
+            Invalid(name, num, str) => {
+                write!(f, "Invalid(\"{}\", {} <client> {})", name, num.map_or(0, |n| n as u16), str)
+            }
+            Raw(str) => write!(f, "{str}"),
         }
     }
 }

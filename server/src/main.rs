@@ -65,7 +65,7 @@ async fn handle_connection(server: SharedServerState, stream: TcpStream) -> io::
 
     tokio::spawn(async move {
         while let Some(msg) = rx.recv().await {
-            println!("> {msg}");
+            println!("{}", format!("-> {msg}").truecolor(100, 110, 135));
             if let Err(e) = writer.write_all((msg.to_string() + "\r\n").as_bytes()).await {
                 eprintln!("Write error: {}", e);
                 break;
@@ -77,6 +77,7 @@ async fn handle_connection(server: SharedServerState, stream: TcpStream) -> io::
     let mut buffer = String::new();
 
     let ip = addr.ip();
+    // todo: Ident
     println!("(Looking up hostname)");
     let hostname = lookup_addr(&ip).unwrap_or(ip.to_string());
 
@@ -122,14 +123,15 @@ async fn handle_message_and_try_register(
             user.username = format!("~{username}");
             user.realname = realname;
         }
+        Command::Invalid(nick, Some(num), s) if ["NICK", "USER"].contains(&nick.as_str()) => {
+            user.reply(num, &s).await;
+        }
         _ => println!("Ignoring message from unregistered user: ({})", message),
     }
 
     if user.username.is_empty() || user.get_nickname().is_empty() {
         return MaybeReg::Unreg(user);
     }
-
-    // todo: wait for ident/hostname
 
     let user = server_lock.register_user(user);
 
@@ -163,8 +165,17 @@ async fn next_message(
             let mut msg_str: String = buffer.drain(..(pos_rn + 1)).collect();
             msg_str.pop();
             if !msg_str.is_empty() {
-                println!("rec < {msg_str}");
-                return msg_str.parse();
+                let res: Result<Message, IrcError> = msg_str.parse();
+                match &res {
+                    Ok(m) if matches!(m, Message { command: Command::Invalid(..), .. }) => {
+                        println!("{}", format!("<- [{msg_str}] -- {m}").bright_purple())
+                    }
+                    Ok(_) => {
+                        println!("{}", format!("<- {msg_str}").bright_blue())
+                    }
+                    Err(err) => println!("{}", format!("<- [{msg_str}] -- {err}").bright_red()),
+                }
+                return res;
             }
         } else if reader.read_line(buffer).await? == 0 {
             return Err(IrcError::Eof); // EOF

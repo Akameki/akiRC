@@ -17,7 +17,8 @@ pub async fn handle_message(server: &SharedServerState, user: &SharedUser, messa
         LIST { channels, elistconds } => handle_list(server, user, channels, elistconds).await,
         WHO { mask } => handle_WHO(server, user, mask).await,
         PRIVMSG { targets, text } => handle_PRIVMSG(server, user, targets, text).await,
-        Invalid | Numeric(..) => println!("ignoring unexpected message"),
+        Invalid(_, Some(num), s) => user.reply(num, &s).await,
+        Invalid(_, None, _) | Numeric(..) | Raw(..) => println!("ignoring unexpected message"),
     };
     println!("handled!");
 }

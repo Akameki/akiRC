@@ -67,7 +67,7 @@ pub fn hostaddr(i: &str) -> IResult<&str, &str> {
 
 // }
 pub fn nickname(i: &str) -> IResult<&str, &str> {
-    recognize((alt((letter, digit)), many_m_n(0, 15, alt((letter, digit, special, tag("-"))))))
+    recognize((alt((letter, special)), many_m_n(0, 15, alt((letter, digit, special, tag("-"))))))
         .parse(i)
 }
 pub fn chanstring(i: &str) -> IResult<&str, &str> {

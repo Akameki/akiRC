@@ -4,6 +4,7 @@ mod sub_parse;
 
 use std::str::FromStr;
 
+use command_parse::parse_command;
 use nom::{
     Finish, IResult, Parser,
     branch::alt,
@@ -13,14 +14,12 @@ use nom::{
     multi::{many_m_n, many0, many1},
     sequence::{delimited, preceded},
 };
+use sub_parse::space;
 
 use crate::{
     IrcError,
     message::{Command, Message},
 };
-
-use command_parse::parse_command;
-use sub_parse::space;
 
 impl FromStr for Message {
     type Err = IrcError;
@@ -30,10 +29,7 @@ impl FromStr for Message {
         let message = parse_message(s)?;
 
         if matches!(message.command, Command::Invalid) {
-            Err(IrcError::IrcParseError(format!(
-                "Unrecognized command {}",
-                s
-            )))
+            Err(IrcError::IrcParseError(format!("Unrecognized command {}", s)))
         } else {
             Ok(message)
         }
@@ -59,10 +55,7 @@ pub fn parse_message(i: &str) -> Result<Message, IrcError> {
         }
     })?;
 
-    Ok(Message {
-        prefix: prefix.map(|p| p.to_owned()),
-        command,
-    })
+    Ok(Message { prefix: prefix.map(|p| p.to_owned()), command })
 }
 
 fn prefix(i: &str) -> IResult<&str, &str> {
@@ -99,23 +92,23 @@ mod tests {
     use super::*;
     use crate::message::Command;
 
-    macro_rules! stringvec {
-        ($($x:expr),*) => (vec![$($x.to_string()),*]);
-    }
+    // macro_rules! stringvec {
+    //     ($($x:expr),*) => (vec![$($x.to_string()),*]);
+    // }
 
     #[test]
     fn test_parse_message() {
         assert_eq!(
             parse_message(":test!user@host NICK test").unwrap(),
-            Message::new(Some("test!user@host"), Command::Nick("test".to_string()))
+            Message::new(Some("test!user@host"), Command::NICK { nickname: "test".to_string() })
         );
         assert_eq!(
             parse_message("NICK :test").unwrap(),
-            Message::new(None, Command::Nick("test".to_string()))
+            Message::new(None, Command::NICK { nickname: "test".to_string() })
         );
         assert_eq!(
             parse_message(":pref NICK test with extra").unwrap(),
-            Message::new(Some("pref"), Command::Nick("test".to_string()))
+            Message::new(Some("pref"), Command::NICK { nickname: "test".to_string() })
         );
     }
 }

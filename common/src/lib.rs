@@ -22,16 +22,12 @@ impl From<nom::Err<nom::error::Error<&str>>> for IrcError {
             nom::Err::Incomplete(e) => {
                 Self::IrcParseError(format!("unexpected nom::Err::Incomplete {:?}", e))
             }
-            nom::Err::Error(e) => Self::IrcParseError(format!(
-                "Error {} parsing {}",
-                e.code.description(),
-                e.input
-            )),
-            nom::Err::Failure(f) => Self::IrcParseError(format!(
-                "Error {} parsing {}",
-                f.code.description(),
-                f.input
-            )),
+            nom::Err::Error(e) => {
+                Self::IrcParseError(format!("Error {} parsing {}", e.code.description(), e.input))
+            }
+            nom::Err::Failure(f) => {
+                Self::IrcParseError(format!("Error {} parsing {}", f.code.description(), f.input))
+            }
         }
     }
 }

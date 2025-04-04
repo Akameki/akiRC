@@ -1,7 +1,13 @@
 #![allow(dead_code)]
 
 use nom::{
-    branch::{alt, Choice}, bytes::complete::{tag, take}, character::complete::{alphanumeric1, char, none_of, one_of, satisfy, space1}, combinator::{opt, recognize, verify}, multi::{many1, many_m_n, separated_list1}, sequence::terminated, Err, IResult, Parser
+    IResult, Parser,
+    branch::alt,
+    bytes::complete::{tag, take},
+    character::complete::{alphanumeric1, char, none_of, one_of, satisfy, space1},
+    combinator::{opt, recognize, verify},
+    multi::{many_m_n, many1, separated_list1},
+    sequence::terminated,
 };
 
 use super::nom_extended::{str_one_of, take_until_one_of};
@@ -26,14 +32,12 @@ pub fn msgto(i: &str) -> IResult<&str, &str> {
         recognize((user, tag("%"), host)),
         // todo targetmask,
         nickname,
-    )).parse(i)
-}
-pub fn channel(i: &str) -> IResult<&str, &str> {
-    recognize((
-        alt((str_one_of("#+&"), recognize((str_one_of("!"), channelid)))),
-        chanstring,
     ))
     .parse(i)
+}
+pub fn channel(i: &str) -> IResult<&str, &str> {
+    recognize((alt((str_one_of("#+&"), recognize((str_one_of("!"), channelid)))), chanstring))
+        .parse(i)
     // TODO: [:chanstring] mask
 }
 pub fn servername(i: &str) -> IResult<&str, &str> {
@@ -63,17 +67,15 @@ pub fn hostaddr(i: &str) -> IResult<&str, &str> {
 
 // }
 pub fn nickname(i: &str) -> IResult<&str, &str> {
-    recognize((alt((letter, digit)), many_m_n(0,15, alt((letter, digit, special, tag("-")))))).parse(i)
+    recognize((alt((letter, digit)), many_m_n(0, 15, alt((letter, digit, special, tag("-"))))))
+        .parse(i)
 }
 pub fn chanstring(i: &str) -> IResult<&str, &str> {
     take_until_one_of("\0\x07\r\n ,:")(i)
 }
 pub fn channelid(i: &str) -> IResult<&str, &str> {
-    verify(take(5usize), |x: &str| {
-        x.chars()
-            .all(|c| c.is_ascii_digit() || c.is_ascii_uppercase())
-    })
-    .parse(i)
+    verify(take(5usize), |x: &str| x.chars().all(|c| c.is_ascii_digit() || c.is_ascii_uppercase()))
+        .parse(i)
 }
 
 // "Other parameters syntaxes"
@@ -98,11 +100,7 @@ pub fn special(i: &str) -> IResult<&str, &str> {
 
 // "Wildcard Expressions" - the ABNF seems strange..
 pub fn mask(i: &str) -> IResult<&str, &str> {
-    recognize(many1(alt((
-        none_of("\0*?"),
-        terminated(none_of("\0\\"), one_of("?*")),
-    ))))
-    .parse(i)
+    recognize(many1(alt((none_of("\0*?"), terminated(none_of("\0\\"), one_of("?*")))))).parse(i)
 }
 
 #[cfg(test)]

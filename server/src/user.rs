@@ -35,14 +35,9 @@ impl User {
         *self.nickname.lock().unwrap() = nick.to_owned();
     }
 
-    /// nickname!user@host
-    pub fn target_str(&self) -> String {
-        format!(
-            "{}!{}@{}",
-            self.get_nickname(),
-            self.username,
-            self.hostname
-        )
+    /// nick!user@host
+    pub fn fqn_string(&self) -> String {
+        format!("{}!{}@{}", self.get_nickname(), self.username, self.hostname)
     }
 
     pub async fn send(&self, message: Arc<Message>) {

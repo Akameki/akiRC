@@ -1,8 +1,7 @@
 use std::{
     collections::HashSet,
     hash::Hash,
-    io,
-    sync::{Arc, Mutex, Weak},
+    sync::{Arc, Weak},
 };
 
 use common::message::Message;
@@ -16,15 +15,9 @@ pub struct Channel {
     users: HashSet<WeakMutexUser>,
 }
 
-// pub type SharedChannel = Arc<Mutex<Channel>>;
-
 impl Channel {
     pub fn new(name: String) -> Self {
-        Channel {
-            name,
-            users: HashSet::new(),
-            topic: String::new(),
-        }
+        Channel { name, users: HashSet::new(), topic: String::new() }
     }
 
     pub fn get_user_nicks(&self) -> Vec<String> {
@@ -56,12 +49,6 @@ impl Channel {
                 user.send(Arc::clone(&message)).await;
             }
         }
-    }
-}
-
-impl Default for Channel {
-    fn default() -> Self {
-        Self::new("".to_owned())
     }
 }
 

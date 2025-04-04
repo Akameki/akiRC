@@ -1,5 +1,6 @@
-use common::stream_handler::blocking_read_until_cr_or_lf;
 use std::io::Cursor;
+
+use common::stream_handler::blocking_read_until_cr_or_lf;
 
 #[rustfmt::skip]
 #[cfg(test)]

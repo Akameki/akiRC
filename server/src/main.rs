@@ -8,6 +8,13 @@ use std::{
     sync::Arc,
 };
 
+use common::{
+    IrcError,
+    message::{Command, Message, Numeric::*},
+};
+use dns_lookup::lookup_addr;
+use message_handling::handle_message;
+use owo_colors::OwoColorize;
 use tokio::{
     io::{AsyncBufReadExt, AsyncWriteExt, BufReader},
     net::{TcpListener, TcpStream, tcp::OwnedReadHalf},
@@ -15,18 +22,9 @@ use tokio::{
     task,
 };
 
-use dns_lookup::lookup_addr;
-use message_handling::handle_message;
-use owo_colors::OwoColorize;
-
 use crate::{
     server_state::{ServerState, SharedServerState},
     user::{SharedUser, User},
-};
-
-use common::{
-    IrcError,
-    message::{Command, Message, Numeric::*},
 };
 
 #[tokio::main]
@@ -68,10 +66,7 @@ async fn handle_connection(server: SharedServerState, stream: TcpStream) -> io::
     tokio::spawn(async move {
         while let Some(msg) = rx.recv().await {
             println!("> {msg}");
-            if let Err(e) = writer
-                .write_all((msg.to_string() + "\r\n").as_bytes())
-                .await
-            {
+            if let Err(e) = writer.write_all((msg.to_string() + "\r\n").as_bytes()).await {
                 eprintln!("Write error: {}", e);
                 break;
             }
@@ -115,18 +110,15 @@ async fn handle_message_and_try_register(
     let mut server_lock = server.lock().await;
 
     match message.command {
-        Command::Nick(new_nick) => {
+        Command::NICK { nickname: new_nick } => {
             if !server_lock.try_update_unregistered_nick(&user.get_nickname(), &new_nick) {
-                user.reply(
-                    ERR_NICKNAMEINUSE,
-                    &format!("{} :Nickname is already in use", new_nick),
-                )
-                .await;
+                user.reply(ERR_NICKNAMEINUSE, &format!("{} :Nickname is already in use", new_nick))
+                    .await;
             } else {
                 user.set_nickname(&new_nick);
             }
         }
-        Command::User(username, mode, _, realname) => {
+        Command::USER { username, _1, _2, realname } => {
             user.username = format!("~{username}");
             user.realname = realname;
         }
@@ -153,19 +145,11 @@ async fn handle_message_and_try_register(
     .await;
     user.reply(
         RPL_YOURHOST,
-        &format!(
-            ":Your host is {}, running version {}",
-            "akiRC.fake.servername", "ver0"
-        ),
+        &format!(":Your host is {}, running version {}", "akiRC.fake.servername", "ver0"),
     )
     .await;
-    user.reply(RPL_CREATED, &format!(":This server was created {}", "?"))
-        .await;
-    user.reply(
-        RPL_MYINFO,
-        &format!("{} {} {} {}", "akiRC.fake.servername", "ver0", "", ""),
-    )
-    .await;
+    user.reply(RPL_CREATED, &format!(":This server was created {}", "?")).await;
+    user.reply(RPL_MYINFO, &format!("{} {} {} {}", "akiRC.fake.servername", "ver0", "", "")).await;
     MaybeReg::Reg(user)
 }
 

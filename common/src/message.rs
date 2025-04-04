@@ -14,23 +14,19 @@ pub enum Command {
     // CAP
     // AUTHENTICATE
     // PASS
-    /// `<nickname>``
-    Nick(String),
-    /// `<user> <mode> <unused> <realname>`
-    User(String, String, String, String),
+    NICK { nickname: String },
+    USER { username: String, _1: String, _2: String, realname: String },
     // PING
     // PONG
     // OPER
     // QUIT
     // ERROR
     /* Channel Operations */
-    /// `<channels> [keys]`, `0 flag`
-    Join(Vec<String>, Vec<String>, bool),
+    JOIN { channels: Vec<String>, keys: Vec<String>, alt: bool },
     // PART
     // TOPIC
     // NAMES
-    /// `[<channels> [target]]`
-    List(Option<Vec<String>>, Option<String>),
+    LIST { channels: Vec<String>, elistconds: Option<String> },
     // INVITE
     // KICK
     /* Server Queries and Commands */
@@ -69,33 +65,9 @@ pub enum Command {
 
 impl Message {
     pub fn new(prefix: Option<&str>, command: Command) -> Self {
-        Message {
-            prefix: prefix.map(|s| s.to_string()),
-            command,
-        }
+        Message { prefix: prefix.map(|s| s.to_string()), command }
     }
 }
-
-// impl Command {
-//     pub fn new(command: &str, params: &[&str]) -> Self {
-//         use Command::*;
-
-//         let len = params.len();
-//         let mut params_iter = params.iter().cloned();
-
-//         macro_rules! req {
-//             () => {
-//                 params_iter.next().unwrap().to_owned()
-//             };
-//         }
-
-//         match command {
-//             "NICK" => Nick(String::from(params[0])),
-//             "USER" if len >= 4 => User(req!(), req!(), req!(), req!()),
-//             _ => Invalid,
-//         }
-//     }
-// }
 
 #[allow(non_camel_case_types)]
 #[derive(Debug, Copy, Clone, PartialEq)]
@@ -140,29 +112,27 @@ impl Display for Command {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         use Command::*;
         match self {
-            Nick(nick) => write!(f, "NICK {}", nick),
-            User(user, mode, unused, realname) => {
-                write!(f, "USER {} {} {} {}", user, mode, unused, realname)
+            NICK { nickname } => write!(f, "NICK {}", nickname),
+            USER { username, _1, _2, realname } => {
+                write!(f, "USER {} {} {} {}", username, _1, _2, realname)
             }
-            Join(channels, keys, flag) => {
-                if *flag {
+            JOIN { channels, keys, alt } => {
+                if *alt {
                     write!(f, "JOIN 0")
                 } else {
-                    write!(
-                        f,
-                        "{}",
-                        ["JOIN".to_string(), channels.join(","), keys.join(",")].join(" ")
-                    )
+                    write!(f, "JOIN {}", channels.join(","))?;
+                    if !keys.is_empty() {
+                        write!(f, " {}", keys.join(","))?;
+                    }
+                    Ok(())
                 }
             }
-            List(channels, target) => {
+            LIST { channels, elistconds } => {
                 write!(f, "LIST")?;
-                if let Some(ch_str) = channels.as_ref().map(|chs| chs.join(",")) {
-                    if !ch_str.is_empty() {
-                        write!(f, " {}", ch_str)?;
-                    }
+                if !channels.is_empty() {
+                    write!(f, " {}", channels.join(","))?;
                 }
-                if let Some(t) = target {
+                if let Some(t) = elistconds {
                     write!(f, " {}", t)?;
                 }
                 Ok(())

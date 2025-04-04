@@ -60,11 +60,7 @@ impl ServerState {
         let nick = user.get_nickname();
         let registered_user = Arc::new(user);
         assert!(self.unregistered_nicks.remove(&nick));
-        assert!(
-            self.users
-                .insert(nick, Arc::clone(&registered_user))
-                .is_none()
-        );
+        assert!(self.users.insert(nick, Arc::clone(&registered_user)).is_none());
         registered_user
     }
     /// Only use in main.rs
@@ -98,8 +94,7 @@ impl ServerState {
     /// Returns &mut to new Channel. Panics if channel already exists.
     pub fn create_channel(&mut self, name: &str) -> &mut Channel {
         assert!(!self.channels.contains_key(name));
-        self.channels
-            .insert(name.to_owned(), Channel::new(name.to_owned()));
+        self.channels.insert(name.to_owned(), Channel::new(name.to_owned()));
         self.channels.get_mut(name).unwrap()
     }
 

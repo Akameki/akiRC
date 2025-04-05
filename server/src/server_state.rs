@@ -1,19 +1,20 @@
 use std::{
     collections::{HashMap, HashSet},
+    fmt::{Debug, Display},
     sync::Arc,
 };
 
 use common::message::Message;
-use tokio::sync::Mutex;
+use tokio::sync::Mutex; // todo: avoid tokio Mutex?
 
 use crate::{
-    channel::Channel,
+    channel::{Channel, SharedChannel},
     user::{SharedUser, User},
 };
 
 pub struct ServerState {
-    users: HashMap<String, SharedUser>, // key=nick
-    channels: HashMap<String, Channel>, // key=name
+    users: HashMap<String, SharedUser>,       // key=nick
+    channels: HashMap<String, SharedChannel>, // key=name
     unregistered_nicks: HashSet<String>,
 }
 pub type SharedServerState = Arc<Mutex<ServerState>>;
@@ -31,8 +32,14 @@ impl ServerState {
     pub fn contains_nick(&self, nick: &str) -> bool {
         self.users.contains_key(nick)
     }
-    pub fn get_user(&self, nick: &str) -> Option<&SharedUser> {
-        self.users.get(nick)
+    pub fn get_user(&self, nick: &str) -> Option<SharedUser> {
+        self.users.get(nick).map(Arc::clone)
+    }
+    pub fn users(&self) -> impl Iterator<Item = SharedUser> {
+        self.users.values().map(Arc::clone)
+    }
+    pub fn channels(&self) -> impl Iterator<Item = SharedChannel> {
+        self.channels.values().map(Arc::clone)
     }
 
     pub fn try_update_nick(&mut self, user: &SharedUser, new_nick: &str) -> bool {
@@ -71,36 +78,72 @@ impl ServerState {
     /// Only use in main.rs
     pub fn remove_user(&mut self, user: SharedUser) {
         let nick = user.get_nickname();
-        // todo: remove from channels
+        for channel in user.get_channels() {
+            self.remove_user_from_channel(&user, &channel);
+        }
         assert!(Arc::ptr_eq(&user, &self.users.remove(&nick).unwrap()));
     }
 
-    pub fn get_channel_names(&self) -> Vec<String> {
-        self.channels.keys().cloned().collect()
+    pub fn get_channel_names(&self) -> impl Iterator<Item = String> {
+        self.channels.keys().cloned()
     }
-    pub fn get_channel(&self, name: &str) -> Option<&Channel> {
-        self.channels.get(name)
+    pub fn get_channel(&self, name: &str) -> Option<SharedChannel> {
+        self.channels.get(name).map(Arc::clone)
     }
-    pub fn get_channel_mut(&mut self, name: &str) -> Option<&mut Channel> {
-        self.channels.get_mut(name)
+    pub fn get_channels(&self) -> impl Iterator<Item = SharedChannel> {
+        self.channels.values().map(Arc::clone)
     }
-    // todo: rename?
-    pub fn get_channels(&self) -> impl Iterator<Item = &Channel> {
-        self.channels.values()
-    }
-    pub fn contains_channel(&self, name: &str) -> bool {
+    pub fn contains_channel_name(&self, name: &str) -> bool {
         self.channels.contains_key(name)
     }
     /// Returns &mut to new Channel. Panics if channel already exists.
-    pub fn create_channel(&mut self, name: &str) -> &mut Channel {
+    pub fn create_channel(&mut self, name: &str) -> SharedChannel {
         assert!(!self.channels.contains_key(name));
-        self.channels.insert(name.to_owned(), Channel::new(name.to_owned()));
-        self.channels.get_mut(name).unwrap()
+        self.channels.insert(name.to_owned(), Arc::new(Channel::new(name.to_owned())));
+        Arc::clone(self.channels.get(name).unwrap())
+    }
+
+    pub fn add_user_to_channel(&mut self, user: &SharedUser, channel: &SharedChannel) -> bool {
+        let (r1, r2) = (user._join_channel(channel), channel._add_user(user));
+        assert_eq!(r1, r2);
+        r1
+    }
+    pub fn remove_user_from_channel(&mut self, user: &SharedUser, channel: &SharedChannel) -> bool {
+        let (r1, r2) = (user._leave_channel(channel), channel._remove_user(user));
+        assert_eq!(r1, r2);
+        if channel.user_count() == 0 {
+            self.channels.remove(&channel.name);
+        }
+        r1
     }
 
     pub async fn broadcast(&mut self, message: Arc<Message>) {
         for user in self.users.values() {
             user.send(Arc::clone(&message)).await;
         }
+    }
+}
+
+impl Display for ServerState {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        writeln!(
+            f,
+            "Users ({}): {}",
+            self.users.len(),
+            self.users().map(|u| u.to_string()).collect::<Vec<_>>().join(", ")
+        )?;
+        write!(
+            f,
+            "Channels ({}): {}",
+            self.channels.len(),
+            self.channels().map(|c| c.to_string()).collect::<Vec<_>>().join(", ")
+        )
+    }
+}
+impl Debug for ServerState {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        writeln!(f, "-- {} Users, {} Channels --", self.users.len(), self.channels.len())?;
+        writeln!(f, "Users: {:?}", self.users().collect::<Vec<_>>())?;
+        write!(f, "Channels: {:?}", self.channels().collect::<Vec<_>>())
     }
 }

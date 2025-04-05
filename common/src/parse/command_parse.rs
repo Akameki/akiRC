@@ -10,7 +10,9 @@ pub fn parse_command(cmd: &str, params: &[&str]) -> Command {
     match cmd.to_uppercase().as_str() {
         "NICK" => parse_NICK(params),
         "USER" => parse_USER(params),
+        /* Channel Operations */
         "JOIN" => parse_JOIN(params),
+        "PART" => parse_PART(params),
         "LIST" => parse_LIST(params),
         "WHO" => parse_WHO(params),
         "PRIVMSG" => parse_PRIVMSG(params),
@@ -95,7 +97,7 @@ fn parse_USER(params: &[&str]) -> Command {
             Some(ERR_NEEDMOREPARAMS),
             format!("{} :Not enough parameters", "USER"),
         );
-    };
+    }
     let username = parse_or_default!(user, params[0], "!INVALID").to_owned();
     let a = params[1].to_owned();
     let b = params[2].to_owned();
@@ -103,17 +105,18 @@ fn parse_USER(params: &[&str]) -> Command {
     Command::USER { username, _1: a, _2: b, realname }
 }
 
-// irc.libera.chat does not behave as expected when passing multiple channels..
+/* Channel Operations */
 
+// irc.libera.chat does not behave as expected when passing multiple channels..
 #[allow(non_snake_case)]
 fn parse_JOIN(params: &[&str]) -> Command {
     if params.is_empty() {
         return Command::Invalid(
             "JOIN".to_string(),
             Some(ERR_NEEDMOREPARAMS),
-            format!("{} :Not enough parameters", "JOIN"),
+            "JOIN :Not enough parameters".to_string(),
         );
-    };
+    }
     if params[0] == "0" {
         return Command::JOIN { channels: vec![], keys: vec![], alt: true };
     }
@@ -132,12 +135,27 @@ fn parse_JOIN(params: &[&str]) -> Command {
 }
 
 #[allow(non_snake_case)]
+fn parse_PART(params: &[&str]) -> Command {
+    if params.is_empty() {
+        return Command::Invalid(
+            "PART".to_string(),
+            Some(ERR_NEEDMOREPARAMS),
+            "PART :Not enough parameters".to_string(),
+        );
+    }
+    let channels = params[0].split(",").map(String::from).collect();
+    // separated_list1(tag(","), channel)
+
+    let reason = if params.len() >= 2 { params[1].to_owned() } else { "".to_string() };
+
+    Command::PART { channels, reason }
+}
+
+#[allow(non_snake_case)]
 fn parse_LIST(params: &[&str]) -> Command {
     let channels = if !params.is_empty() {
-        parse_or_default!(separated_list1(tag(","), channel), params[0], Vec::new())
-            .into_iter()
-            .map(String::from)
-            .collect()
+        params[0].split(",").map(String::from).collect()
+        // separated_list1(tag(","), channel)
     } else {
         Vec::new()
     };
@@ -153,9 +171,9 @@ fn parse_WHO(params: &[&str]) -> Command {
         return Command::Invalid(
             "WHO".to_string(),
             Some(ERR_NEEDMOREPARAMS),
-            format!("{} :Not enough parameters", "WHO"),
+            "WHO :Not enough parameters".to_string(),
         );
-    };
+    }
     // RFC has some weird syntax for masks. irc.libera.chat accepts anything.
     // let (_, mask) = all_consuming(mask).parse(params[0])?;
     let mask = params[0].to_owned();

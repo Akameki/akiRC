@@ -25,12 +25,13 @@ pub enum Command {
 
     /* Channel Operations */
     JOIN { channels: Vec<String>, keys: Vec<String>, alt: bool },
-    // PART
+    PART { channels: Vec<String>, reason: String },
     // TOPIC
     // NAMES
     LIST { channels: Vec<String>, elistconds: Option<String> },
     // INVITE
     // KICK
+
     /* Server Queries and Commands */
     // MOTD
     // VERSION
@@ -111,6 +112,7 @@ pub enum Numeric {
     ERR_NONICKNAMEGIVEN = 431,
     ERR_ERRONEUSNICKNAME = 432,
     ERR_NICKNAMEINUSE = 433,
+    ERR_NOTONCHANNEL = 442,
     ERR_NEEDMOREPARAMS = 461,
     ERR_ALREADYREGISTERED = 462,
 }
@@ -142,6 +144,13 @@ impl Display for Command {
                     }
                     Ok(())
                 }
+            }
+            PART { channels, reason } => {
+                write!(f, "PART {}", channels.join(","))?;
+                if !reason.is_empty() {
+                    write!(f, " :{}", reason)?;
+                }
+                Ok(())
             }
             LIST { channels, elistconds } => {
                 write!(f, "LIST")?;

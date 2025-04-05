@@ -1,6 +1,6 @@
 pub mod message;
 pub mod parse;
-pub mod stream_handler;
+// pub mod stream_handler;
 
 use thiserror::Error;
 
@@ -8,10 +8,8 @@ pub type IrcParseErrorString = String;
 
 #[derive(Error, Debug)]
 pub enum IrcError {
-    #[error("IO Error: {0}")]
+    #[error("IrcError::I: {0}")]
     Io(#[from] std::io::Error),
-    #[error("EOF")]
-    Eof,
     #[error("{0}")]
     IrcParseError(IrcParseErrorString),
 }

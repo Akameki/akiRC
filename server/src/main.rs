@@ -37,7 +37,7 @@ async fn main() {
         let (stream, _) = match listener.accept().await {
             Ok(conn) => conn,
             Err(e) => {
-                eprintln!("Error acceptiong connection: {}", e);
+                eprintln!("Error accepting connection: {}", e);
                 continue;
             }
         };
@@ -45,7 +45,7 @@ async fn main() {
         let server_clone = server.clone();
         task::spawn(async move {
             if let Err(e) = handle_connection(server_clone, stream).await {
-                eprintln!("{e}");
+                eprintln!("{}", e.red());
             };
         });
     }
@@ -58,7 +58,7 @@ enum MaybeReg {
 
 async fn handle_connection(server: SharedServerState, stream: TcpStream) -> io::Result<()> {
     let addr = stream.peer_addr()?;
-    println!("{}{}", "Connected: ".green(), addr);
+    println!("{} {} Looking up hostname...", "Connected:".green(), addr);
 
     let (reader, mut writer) = stream.into_split();
     let (tx, mut rx) = mpsc::channel::<Arc<Message>>(100);
@@ -90,15 +90,14 @@ async fn handle_connection(server: SharedServerState, stream: TcpStream) -> io::
                 MaybeReg::Reg(ref u) => handle_message(&server, u, msg).await,
             },
             Err(IrcError::IrcParseError(e)) => println!("{}", e.bright_purple()),
-            Err(IrcError::Eof) => {
+            Err(IrcError::Io(e)) => {
+                println!("{} {} [{}] {e}", "Disconnected:".red(), addr, e.kind());
                 match user {
                     MaybeReg::Unreg(u) => server.lock().await.remove_unregistered_nick(u),
                     MaybeReg::Reg(u) => server.lock().await.remove_user(u),
                 }
-                println!("{} {}", "Disconnected:".red(), addr);
                 return Ok(());
             }
-            Err(IrcError::Io(e)) => return Err(e),
         }
     }
 }
@@ -178,7 +177,7 @@ async fn next_message(
                 return res;
             }
         } else if reader.read_line(buffer).await? == 0 {
-            return Err(IrcError::Eof); // EOF
+            return Err(IrcError::Io(io::Error::from(io::ErrorKind::UnexpectedEof)));
         }
     }
 }

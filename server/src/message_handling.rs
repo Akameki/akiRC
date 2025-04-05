@@ -9,18 +9,20 @@ pub async fn handle_message(server: &SharedServerState, user: &SharedUser, messa
     use Command::*;
 
     match message.command {
-        NICK { nickname } => handle_nick(server, user, nickname).await,
+        NICK { nickname } => handle_NICK(server, user, nickname).await,
         USER { .. } => {
             user.reply(ERR_ALREADYREGISTERED, ":Unauthorized command (already registered)").await
         }
-        JOIN { channels, keys, alt } => handle_join(server, user, channels, keys, alt).await,
-        LIST { channels, elistconds } => handle_list(server, user, channels, elistconds).await,
+        /* Channel Operations */
+        JOIN { channels, keys, alt } => handle_JOIN(server, user, channels, keys, alt).await,
+        PART { channels, reason } => handle_PART(server, user, channels, reason).await,
+        LIST { channels, elistconds } => handle_LIST(server, user, channels, elistconds).await,
         WHO { mask } => handle_WHO(server, user, mask).await,
         PRIVMSG { targets, text } => handle_PRIVMSG(server, user, targets, text).await,
         Invalid(_, Some(num), s) => user.reply(num, &s).await,
         Invalid(_, None, _) | Numeric(..) | Raw(..) => println!("ignoring unexpected message"),
     };
-    println!("handled!");
+    println!("{}", server.lock().await);
 }
 
 // Individual command handlers follow below.
@@ -32,10 +34,11 @@ type Sss = SharedServerState;
 type Su = SharedUser;
 type Res = ();
 
-async fn handle_nick(sss: &Sss, su: &Su, a_nick: String) -> Res {
+#[allow(non_snake_case)]
+async fn handle_NICK(sss: &Sss, su: &Su, a_nick: String) -> Res {
     let mut server = sss.lock().await;
     if server.try_update_nick(su, &a_nick) {
-        let target = su.fqn_string();
+        let target = su.get_fqn_string();
         server
             .broadcast(Arc::new(Message::new(Some(&target), Command::NICK { nickname: a_nick })))
             .await
@@ -44,32 +47,27 @@ async fn handle_nick(sss: &Sss, su: &Su, a_nick: String) -> Res {
     }
 }
 
-async fn handle_join(
+#[allow(non_snake_case)]
+async fn handle_JOIN(
     sss: &Sss,
-    su: &Su,
+    user: &Su,
     a_channels: Vec<String>,
     a_keys: Vec<String>,
     a_flag: bool,
 ) -> Res {
     let mut server = sss.lock().await;
-    let user = su;
     // TODO: assuming just one channel for now
     let channel_name = a_channels[0].clone();
-    let channel = if let Some(ch) = server.get_channel_mut(&channel_name) {
-        ch
-    } else {
-        server.create_channel(&channel_name)
-    };
-    channel.add_user(su);
-    let source = user.fqn_string();
-    let nicks = channel.get_user_nicks();
+    let channel =
+        server.get_channel(&channel_name).unwrap_or_else(|| server.create_channel(&channel_name));
+    server.add_user_to_channel(user, &channel);
+    let nicks = channel.get_users().map(|u| u.get_nickname()).collect::<Vec<_>>();
     channel
         .broadcast(Arc::new(Message::new(
-            Some(&source),
+            Some(&user.get_fqn_string()),
             Command::JOIN { channels: vec![channel_name.clone()], keys: vec![], alt: false },
         )))
         .await;
-    let user = su;
     user.reply(
         RPL_NAMREPLY,
         &format!("= {} :{}", channel_name, nicks.join(" ")), // todo: message limit
@@ -78,9 +76,35 @@ async fn handle_join(
     user.reply(RPL_ENDOFNAMES, &format!("{} :End of /NAMES list", channel_name)).await;
 }
 
-async fn handle_list(sss: &Sss, su: &Su, a_channels: Vec<String>, a_target: Option<String>) -> Res {
+#[allow(non_snake_case)]
+async fn handle_PART(sss: &Sss, user: &Su, a_channels: Vec<String>, a_reason: String) -> Res {
+    let mut server = sss.lock().await;
+    for channel_name in a_channels {
+        let success_msg = Arc::new(Message::new(
+            Some(&user.get_fqn_string()),
+            Command::PART { channels: vec![channel_name.clone()], reason: a_reason.clone() },
+        ));
+        if let Some(channel) = server.get_channel(&channel_name) {
+            if channel.contains_user(user) {
+                channel.broadcast(success_msg).await;
+                server.remove_user_from_channel(user, &channel);
+            } else {
+                user.reply(ERR_NOTONCHANNEL, ":You're not on that channel").await;
+            }
+        } else {
+            user.reply(ERR_NOSUCHCHANNEL, ":No such channel").await;
+        }
+    }
+}
+
+#[allow(non_snake_case)]
+async fn handle_LIST(
+    sss: &Sss,
+    user: &Su,
+    a_channels: Vec<String>,
+    a_elistconds: Option<String>,
+) -> Res {
     let server = sss.lock().await;
-    let user = su;
     if a_channels.is_empty() {
         user.reply(RPL_LISTSTART, "Channel :Users  Name").await;
         for ch in server.get_channels() {

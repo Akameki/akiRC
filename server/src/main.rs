@@ -32,7 +32,7 @@ async fn main() {
     let server = Arc::new(Mutex::new(ServerState::new()));
     let listener = TcpListener::bind("0.0.0.0:9999").await.unwrap();
 
-    println!("{}", "akiRC server started!".underline());
+    println!("{}{}", server.lock().await.servername, " has started!".underline());
     loop {
         let (stream, _) = match listener.accept().await {
             Ok(conn) => conn,
@@ -146,11 +146,36 @@ async fn handle_message_and_try_register(
     .await;
     user.reply(
         RPL_YOURHOST,
-        &format!(":Your host is {}, running version {}", "akiRC.fake.servername", "ver0"),
+        &format!(
+            ":Your host is {}, running version {}",
+            server_lock.servername, server_lock.version
+        ),
     )
     .await;
-    user.reply(RPL_CREATED, &format!(":This server was created {}", "?")).await;
-    user.reply(RPL_MYINFO, &format!("{} {} {} {}", "akiRC.fake.servername", "ver0", "", "")).await;
+    user.reply(RPL_CREATED, &format!(":This server was created {}", server_lock.creation_datetime))
+        .await;
+    user.reply(
+        RPL_MYINFO,
+        &format!(
+            "{} {} {} {} {}",
+            server_lock.servername,
+            server_lock.version,
+            server_lock.usermodes,
+            server_lock.channelmodes,
+            server_lock.channelmodes_with_params
+        ),
+    )
+    .await;
+    assert!(server_lock.isupport_tokens.len() <= 13, "write logic for splitting messages");
+    user.reply(
+        RPL_ISUPPORT,
+        &format!("{} :are supported by this server", server_lock.isupport_tokens.join(" ")),
+    )
+    .await;
+    // Other numerics/messages
+    // LUSERS responses
+    // MOTD
+    // UMODEIS or MODE
     MaybeReg::Reg(user)
 }
 

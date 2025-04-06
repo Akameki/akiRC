@@ -3,40 +3,67 @@ use std::{
     fmt::{Debug, Display},
     hash::Hash,
     sync::{Arc, Mutex, Weak},
+    time::SystemTime,
 };
 
 use common::message::Message;
 
-use crate::user::{SharedUser, User};
+use crate::user::{SharedUser, User, WeakUser};
 
+/// Each mode is one of four types, as specified by IRCv3 docs.  
+/// ChannelModes only stores modes, and Channel provides no checks for privaleges.  
+/// I.e. Channel and ChannelModes only sees arbitrary letters. Implementation must be elsewhere.
 #[derive(Clone)]
-struct WeakUser(Weak<User>);
+pub struct ChannelModes {
+    /* Type A: list modes */
+    /* Type B: param on set */
+    /* Type C: param always */
+    /* Type D: no params */
+    /// secret channel
+    pub s: bool,
+}
+
 pub struct Channel {
+    pub creation_time: String,
     pub name: String,
     pub topic: String,
     users: Mutex<HashSet<WeakUser>>,
+    modes: Mutex<ChannelModes>,
 }
+#[derive(Clone)]
+pub struct WeakChannel(pub Weak<Channel>);
 pub type SharedChannel = Arc<Channel>;
 
 impl Channel {
     pub fn new(name: String) -> Self {
-        Channel { name, users: Mutex::new(HashSet::new()), topic: String::new() }
+        Channel {
+            creation_time: SystemTime::now()
+                .duration_since(SystemTime::UNIX_EPOCH)
+                .unwrap()
+                .as_secs()
+                .to_string(),
+            name,
+            users: Mutex::new(HashSet::new()),
+            topic: String::new(),
+            modes: Mutex::new(ChannelModes { s: false }),
+        }
     }
 
-    /// Snapshot of users in this channel.
-    pub fn get_users(&self) -> impl Iterator<Item = SharedUser> {
-        self.users.lock().unwrap().clone().into_iter().map(|user| user.0.upgrade().unwrap())
-    }
     pub fn get_nicks(&self) -> impl Iterator<Item = String> {
         self.get_users().map(|user| user.get_nickname())
     }
+
+    /* Users */
     pub fn contains_user(&self, user: &SharedUser) -> bool {
         self.users.lock().unwrap().contains(&WeakUser(Arc::downgrade(user)))
     }
     pub fn user_count(&self) -> usize {
         self.users.lock().unwrap().len()
     }
-
+    /// Snapshot of users in this channel.
+    pub fn get_users(&self) -> impl Iterator<Item = SharedUser> {
+        self.users.lock().unwrap().clone().into_iter().map(|user| user.0.upgrade().unwrap())
+    }
     pub fn _add_user(&self, user: &SharedUser) -> bool {
         self.users.lock().unwrap().insert(WeakUser(Arc::downgrade(user)))
     }
@@ -44,6 +71,26 @@ impl Channel {
         self.users.lock().unwrap().remove(&WeakUser(Arc::downgrade(user)))
     }
 
+    /* Modes */
+    /// Snapshot of channel modes
+    pub fn get_modes(&self) -> ChannelModes {
+        self.modes.lock().unwrap().clone()
+    }
+    pub fn set_mode_type_d(&self, mode: char, value: bool) -> bool {
+        let mut modes = self.modes.lock().unwrap();
+        let flag = match mode {
+            's' => &mut modes.s,
+            _ => panic!("mode was not checked first!"),
+        };
+        if *flag == value {
+            false
+        } else {
+            *flag = value;
+            true
+        }
+    }
+
+    /* Messaging */
     pub async fn broadcast(&self, message: Arc<Message>) {
         for user in self.get_users() {
             user.send(Arc::clone(&message)).await;
@@ -69,14 +116,14 @@ impl Debug for Channel {
     }
 }
 
-impl PartialEq for WeakUser {
+impl PartialEq for WeakChannel {
     fn eq(&self, other: &Self) -> bool {
         Weak::ptr_eq(&self.0, &other.0)
     }
 }
-impl Eq for WeakUser {}
-impl Hash for WeakUser {
+impl Eq for WeakChannel {}
+impl Hash for WeakChannel {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        self.0.as_ptr().hash(state)
+        Weak::as_ptr(&self.0).hash(state);
     }
 }

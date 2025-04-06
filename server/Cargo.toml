@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+chrono = "0.4.40"
 common = { path = "../common" }
 dns-lookup = "2.0.4"
 owo-colors = "4.2.0"

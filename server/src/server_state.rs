@@ -13,6 +13,13 @@ use crate::{
 };
 
 pub struct ServerState {
+    pub servername: String,
+    pub version: String,
+    pub creation_datetime: String,
+    pub usermodes: String,
+    pub channelmodes: String,
+    pub channelmodes_with_params: String,
+    pub isupport_tokens: Vec<String>,
     users: HashMap<String, SharedUser>,       // key=nick
     channels: HashMap<String, SharedChannel>, // key=name
     unregistered_nicks: HashSet<String>,
@@ -26,6 +33,40 @@ impl ServerState {
             users: HashMap::new(),
             channels: HashMap::new(),
             unregistered_nicks: HashSet::new(),
+
+            usermodes: String::from("i"),
+            channelmodes: String::from("s"),
+            servername: String::from("akiRC.chat"),
+            version: String::from("akiRC-0.1"),
+            // Day Mon Date Year at Time UTC
+            creation_datetime: chrono::Utc::now().format("%a %b %d %Y at %T UTC").to_string(),
+            channelmodes_with_params: String::from(""),
+            isupport_tokens: vec![
+                // String::from("AWAYLEN=200"),
+                // String::from("CASEMAPPING=ascii"),
+                // String::from("CHANLIMIT=#:25"),
+                String::from("CHANMODES=,,,s"),
+                // String::from("CHANNELLEN=32"),
+                String::from("CHANTYPES=#&"), // =#&
+                // String::from("ELIST..."),
+                // String::from("EXCEPTS...")
+                // String::from("EXTBAN...")
+                // String::from("HOSTLEN=64")
+                // String::from("INVEX...")
+                // String::from("KICKLEN=307")
+                // String::from("MAXLIST=beI:200"),
+                // String::from("MAXTARGET"),
+                // String::from("MODES=4"),
+                String::from("NETWORK=akiRC"),
+                String::from("NICKLEN=16"),
+                // String::from("PREFIX=(ov)@+"),
+                // String::from("SAFELIST"),
+                // String::from("SILENCE"),
+                // String::from("STATUSMSG"),
+                // String::from("TARGMAX=..."),
+                // String::from("TOPICLEN=307"),
+                // String::from("USERLEN=10"),
+            ],
         }
     }
 

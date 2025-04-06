@@ -1,6 +1,5 @@
-use nom::{Parser, bytes::complete::tag, combinator::all_consuming, multi::separated_list1};
+use nom::{Parser, combinator::all_consuming};
 
-use super::sub_parse::channel;
 use crate::{
     message::{Command, Numeric::*},
     parse::sub_parse::{nickname, user},
@@ -8,14 +7,61 @@ use crate::{
 
 pub fn parse_command(cmd: &str, params: &[&str]) -> Command {
     match cmd.to_uppercase().as_str() {
+        /* Connection Messages */
+        // CAP
+        // AUTHENTICATE
+        // PASS
         "NICK" => parse_NICK(params),
         "USER" => parse_USER(params),
+        // PING
+        // PONG
+        // OPER
+        // QUIT
+        // ERROR
+
         /* Channel Operations */
         "JOIN" => parse_JOIN(params),
         "PART" => parse_PART(params),
+        // TOPIC
+        // NAMES
         "LIST" => parse_LIST(params),
-        "WHO" => parse_WHO(params),
+        // INVITE
+        // KICK
+
+        /* Server Queries and Commands */
+        // MOTD
+        // VERSION
+        // ADMIN
+        // CONNECT
+        // LUSERS
+        // TIME
+        // STATS
+        // HELP
+        // INFO
+        "MODE" => parse_MODE(params),
+
+        /* Sending Messages */
         "PRIVMSG" => parse_PRIVMSG(params),
+        // NOTICE
+
+        /* User Based Queries */
+        "WHO" => parse_WHO(params),
+        // WHOIS
+        // WHOWAS
+
+        /* Operator Messages */
+        // KILL
+        // REHASH
+        // RESTART
+        // SQUIT
+
+        /* Optional Messages */
+        // AWAY
+        // LINKS
+        // USERHOST
+        // WALLOPS
+
+        /* Other */
         _ => Command::Invalid(
             cmd.to_string(),
             Some(ERR_UNKNOWNCOMMAND),
@@ -166,18 +212,38 @@ fn parse_LIST(params: &[&str]) -> Command {
 }
 
 #[allow(non_snake_case)]
-fn parse_WHO(params: &[&str]) -> Command {
+fn parse_MODE(params: &[&str]) -> Command {
     if params.is_empty() {
         return Command::Invalid(
-            "WHO".to_string(),
+            "MODE".to_string(),
             Some(ERR_NEEDMOREPARAMS),
-            "WHO :Not enough parameters".to_string(),
+            "MODE :Not enough parameters".to_string(),
         );
     }
-    // RFC has some weird syntax for masks. irc.libera.chat accepts anything.
-    // let (_, mask) = all_consuming(mask).parse(params[0])?;
-    let mask = params[0].to_owned();
-    Command::WHO { mask }
+    let target = params[0].to_owned();
+    let mut modestring = String::new();
+    let mut modeargs: Vec<String> = Vec::new();
+    if params.len() >= 2 {
+        let mut mode = '+';
+        let mut current_mode = ' ';
+        let mut num_modes = 0;
+        for c in params[1].chars() {
+            if c == '+' || c == '-' {
+                mode = c
+            } else {
+                if current_mode != mode {
+                    modestring.push(mode);
+                    current_mode = mode;
+                }
+                modestring.push(c);
+                num_modes += 1;
+            }
+        }
+        // push remaining params into modeargs, up to # modes
+        modeargs.extend(params.iter().skip(2).take(num_modes).map(|s| s.to_string()));
+    }
+
+    Command::MODE { target, modestring, modeargs }
 }
 
 #[allow(non_snake_case)]
@@ -200,6 +266,21 @@ fn parse_PRIVMSG(params: &[&str]) -> Command {
     // let targets = targets.into_iter().map(|x| x.to_string()).collect();
     let text = params[1].to_owned();
     Command::PRIVMSG { targets, text }
+}
+
+#[allow(non_snake_case)]
+fn parse_WHO(params: &[&str]) -> Command {
+    if params.is_empty() {
+        return Command::Invalid(
+            "WHO".to_string(),
+            Some(ERR_NEEDMOREPARAMS),
+            "WHO :Not enough parameters".to_string(),
+        );
+    }
+    // RFC has some weird syntax for masks. irc.libera.chat accepts anything.
+    // let (_, mask) = all_consuming(mask).parse(params[0])?;
+    let mask = params[0].to_owned();
+    Command::WHO { mask }
 }
 
 #[cfg(test)]
@@ -268,6 +349,26 @@ mod tests {
         assert_eq!(
             parse_LIST(&["#chan1,#chan2,#chan3"]),
             Command::LIST { channels: stringvec!["#chan1", "#chan2", "#chan3"], elistconds: None }
+        );
+    }
+
+    #[test]
+    fn test_mode() {
+        assert_eq!(
+            parse_MODE(&["t", "ab", "p1", "p2", "p3"]),
+            Command::MODE {
+                target: "t".to_string(),
+                modestring: "+ab".to_string(),
+                modeargs: stringvec!["p1", "p2"],
+            }
+        );
+        assert_eq!(
+            parse_MODE(&["t", "-m-+-m-+p--mm+p", "p1", "p2"]),
+            Command::MODE {
+                target: "t".to_string(),
+                modestring: "-mm+p-mm+p".to_string(),
+                modeargs: stringvec!["p1", "p2"],
+            }
         );
     }
 }

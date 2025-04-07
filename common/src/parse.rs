@@ -9,12 +9,11 @@ use nom::{
     Finish, IResult, Parser,
     branch::alt,
     bytes::complete::tag,
-    character::complete::{alpha1, char, none_of, one_of},
-    combinator::{all_consuming, opt, recognize},
+    character::complete::{alpha1, char, none_of},
+    combinator::{all_consuming, map, opt, recognize},
     multi::{many_m_n, many0, many1},
     sequence::{delimited, preceded},
 };
-use sub_parse::space;
 
 use crate::{IrcError, message::Message};
 
@@ -25,6 +24,7 @@ impl FromStr for Message {
     }
 }
 
+/// Input should not contain crlf or it will fail.
 pub fn parse_message(i: &str) -> Result<Message, IrcError> {
     let i = i.trim();
     let (_, (pref, cmd, params)) = all_consuming((opt(prefix), command, params))
@@ -35,30 +35,25 @@ pub fn parse_message(i: &str) -> Result<Message, IrcError> {
     let prefix = pref.map(|p| p.to_owned());
     let command = parse_command(cmd, &params);
 
-    Ok(Message { prefix: prefix.map(|p| p.to_owned()), command })
+    Ok(Message { prefix, command })
 }
 
 fn prefix(i: &str) -> IResult<&str, &str> {
     let servername = recognize(many1(none_of(" ")));
-    delimited(char(':'), servername, char(' ')).parse(i)
+    delimited(char(':'), servername, space).parse(i)
 }
-
 fn command(i: &str) -> IResult<&str, &str> {
     alpha1(i)
 }
-
 fn params(i: &str) -> IResult<&str, Vec<&str>> {
-    let spcrflcl = "\0\r\n :";
-    let nospcrlfcl = none_of(spcrflcl); // FIXME: move
-    let middle = recognize((nospcrlfcl, many0(alt((char(':'), none_of(spcrflcl))))));
-    let trailing = recognize(many1(alt((one_of(" :"), none_of(spcrflcl)))));
+    let middle = recognize((nospcrlfcl, many0(alt((tag(":"), nospcrlfcl)))));
+    let trailing = recognize(many1(alt((tag(":"), tag(" "), nospcrlfcl))));
 
     let (i, mut params) = many_m_n(0, 14, preceded(space, middle)).parse(i)?;
 
     let (i, trail) = if params.len() < 14 {
-        opt(preceded((space, tag(":")), trailing)).parse(i)?
+        opt(preceded((space, tag(":")), recognize(opt(trailing)))).parse(i)?
     } else {
-        // : is optional
         opt(preceded((space, opt(tag(":"))), trailing)).parse(i)?
     };
     if let Some(t) = trail {
@@ -67,6 +62,12 @@ fn params(i: &str) -> IResult<&str, Vec<&str>> {
     Ok((i, params))
 }
 
+fn nospcrlfcl(i: &str) -> IResult<&str, &str> {
+    recognize(none_of("\0\r\n :")).parse(i)
+}
+fn space(i: &str) -> IResult<&str, &str> {
+    map(many1(tag(" ")), |spaces| spaces[0]).parse(i)
+}
 #[cfg(test)]
 mod tests {
     use super::*;

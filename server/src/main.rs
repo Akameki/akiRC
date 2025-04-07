@@ -8,6 +8,7 @@ use std::{
     sync::Arc,
 };
 
+use ::lazy_static::lazy_static;
 use common::{
     IrcError,
     message::{Command, Message, Numeric::*},
@@ -27,12 +28,59 @@ use crate::{
     user::{SharedUser, User},
 };
 
+const BIND_ADDR: &str = "0.0.0.0:6667";
+
+// ISUPPORT tokens:
+const NICKLEN: usize = 16;
+const TOPICLEN: usize = 307;
+const USERLEN: usize = 10;
+
+pub const USERMODES: &str = "i";
+pub const CHANNELMODES: &str = "s";
+pub const SERVERNAME: &str = "akiRC.chat";
+pub const VERSION: &str = "akiRC_0.3.0";
+pub const CHANNELMODES_WITH_PARAMS: &str = "";
+pub const MOTD: &str = "<3"; // TODO: move to file
+lazy_static! {
+    pub static ref ISUPPORT_TOKENS: [String; 6] = [
+        // String::from("AWAYLEN=200"),
+        // String::from("CASEMAPPING=ascii"),
+        // String::from("CHANLIMIT=#:25"),
+        String::from("CHANMODES=,,,s"),
+        // String::from("CHANNELLEN=32"),
+        String::from("CHANTYPES=#&"), // =#&
+        // String::from("ELIST..."),
+        // String::from("EXCEPTS..."),
+        // String::from("EXTBAN..."),
+        // String::from("HOSTLEN=64"),
+        // String::from("INVEX..."),
+        // String::from("KICKLEN=307"),
+        // String::from("MAXLIST=beI:200"),
+        // String::from("MAXTARGET"),
+        // String::from("MODES=4"),
+        String::from("NETWORK=akiRC"),
+        format!("NICKLEN={}", NICKLEN),
+        // String::from("PREFIX=(ov)@+"),
+        // String::from("SAFELIST"),
+        // String::from("SILENCE"),
+        // String::from("STATUSMSG"),
+        // String::from("TARGMAX=..."),
+        format!("TOPICLEN={}", TOPICLEN),
+        format!("USERLEN={}",   USERLEN),
+    ];
+}
+
 #[tokio::main]
 async fn main() {
     let server = Arc::new(Mutex::new(ServerState::new()));
-    let listener = TcpListener::bind("0.0.0.0:9999").await.unwrap();
+    let listener = TcpListener::bind(BIND_ADDR).await.unwrap();
 
-    println!("{}{}", server.lock().await.servername, " has started!".underline());
+    println!(
+        "{}{}{}",
+        SERVERNAME.underline(),
+        " has started on ".underline(),
+        BIND_ADDR.underline()
+    );
     loop {
         let (stream, _) = match listener.accept().await {
             Ok(conn) => conn,
@@ -78,7 +126,6 @@ async fn handle_connection(server: SharedServerState, stream: TcpStream) -> io::
 
     let ip = addr.ip();
     // todo: Ident
-    println!("(Looking up hostname)");
     let hostname = lookup_addr(&ip).unwrap_or(ip.to_string());
 
     let mut user = MaybeReg::Unreg(User::new(tx, hostname));
@@ -87,7 +134,15 @@ async fn handle_connection(server: SharedServerState, stream: TcpStream) -> io::
         match next_message(&mut buf_reader, &mut buffer).await {
             Ok(msg) => match user {
                 MaybeReg::Unreg(u) => user = handle_message_and_try_register(&server, u, msg).await,
-                MaybeReg::Reg(ref u) => handle_message(&server, u, msg).await,
+                MaybeReg::Reg(ref u) => {
+                    let quit = matches!(&msg.command, Command::QUIT { .. });
+                    handle_message(&server, u, msg).await;
+                    if quit {
+                        println!("{} {}", "Quit: ".red(), addr);
+                        server.lock().await.remove_user(u.clone());
+                        return Ok(());
+                    }
+                }
             },
             Err(IrcError::IrcParseError(e)) => println!("{}", e.bright_purple()),
             Err(IrcError::Io(e)) => {
@@ -119,6 +174,8 @@ async fn handle_message_and_try_register(
             }
         }
         Command::USER { username, _1, _2, realname } => {
+            // TODO: restrict to alphanum?
+            let username: String = username.chars().take(USERLEN - 1).collect();
             user.username = format!("~{username}");
             user.realname = realname;
         }
@@ -144,37 +201,29 @@ async fn handle_message_and_try_register(
         ),
     )
     .await;
-    user.reply(
-        RPL_YOURHOST,
-        &format!(
-            ":Your host is {}, running version {}",
-            server_lock.servername, server_lock.version
-        ),
-    )
-    .await;
+    user.reply(RPL_YOURHOST, &format!(":Your host is {}, running version {}", SERVERNAME, VERSION))
+        .await;
     user.reply(RPL_CREATED, &format!(":This server was created {}", server_lock.creation_datetime))
         .await;
     user.reply(
         RPL_MYINFO,
         &format!(
             "{} {} {} {} {}",
-            server_lock.servername,
-            server_lock.version,
-            server_lock.usermodes,
-            server_lock.channelmodes,
-            server_lock.channelmodes_with_params
+            SERVERNAME, VERSION, USERMODES, CHANNELMODES, CHANNELMODES_WITH_PARAMS
         ),
     )
     .await;
-    assert!(server_lock.isupport_tokens.len() <= 13, "write logic for splitting messages");
+    assert!(ISUPPORT_TOKENS.len() <= 13, "write logic for splitting messages");
     user.reply(
         RPL_ISUPPORT,
-        &format!("{} :are supported by this server", server_lock.isupport_tokens.join(" ")),
+        &format!("{} :are supported by this server", ISUPPORT_TOKENS.join(" ")),
     )
     .await;
     // Other numerics/messages
     // LUSERS responses
     // MOTD
+    handle_message(server, &user, Message::new(None, Command::MOTD { target: String::new() }))
+        .await;
     // UMODEIS or MODE
     MaybeReg::Reg(user)
 }

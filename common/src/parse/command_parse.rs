@@ -13,23 +13,23 @@ pub fn parse_command(cmd: &str, params: &[&str]) -> Command {
         // PASS
         "NICK" => parse_NICK(params),
         "USER" => parse_USER(params),
-        // PING
-        // PONG
+        "PING" => parse_PING(params),
+        "PONG" => parse_PONG(params),
         // OPER
-        // QUIT
+        "QUIT" => parse_QUIT(params),
         // ERROR
 
         /* Channel Operations */
         "JOIN" => parse_JOIN(params),
         "PART" => parse_PART(params),
-        // TOPIC
+        "TOPIC" => parse_TOPIC(params),
         // NAMES
         "LIST" => parse_LIST(params),
         // INVITE
         // KICK
 
         /* Server Queries and Commands */
-        // MOTD
+        "MOTD" => parse_MOTD(params),
         // VERSION
         // ADMIN
         // CONNECT
@@ -71,22 +71,6 @@ pub fn parse_command(cmd: &str, params: &[&str]) -> Command {
 }
 
 /* Utility functions/macros */
-// /// Returns Invalid if given parameter list is not at least some length.
-// /// ### Example
-// /// ```ignore
-// /// check_need_more_params!("NICK", params, 1);
-// /// ```
-// macro_rules! check_need_more_params {
-//     ($cmd:literal, $params:expr, $len:expr) => {
-//         if $params.len() < $len {
-//             return Command::Invalid(
-//                 $cmd.to_string(),
-//                 Some(ERR_NEEDMOREPARAMS),
-//                 format!("{} :Not enough parameters", $cmd),
-//             );
-//         }
-//     };
-// }
 
 /// Returns output of a parser if completely parsed, or otherwise returns a given Command as error.
 /// ### Example
@@ -115,6 +99,10 @@ macro_rules! parse_or_default {
 // Individual command parsers below.
 // Extra parameters are ignored.
 
+/* Connection Messages */
+// CAP
+// AUTHENTICATE
+// PASS
 #[allow(non_snake_case)]
 fn parse_NICK(params: &[&str]) -> Command {
     if params.is_empty() {
@@ -134,7 +122,6 @@ fn parse_NICK(params: &[&str]) -> Command {
     .to_owned();
     Command::NICK { nickname }
 }
-
 #[allow(non_snake_case)]
 fn parse_USER(params: &[&str]) -> Command {
     if params.len() < 4 {
@@ -144,15 +131,39 @@ fn parse_USER(params: &[&str]) -> Command {
             format!("{} :Not enough parameters", "USER"),
         );
     }
-    let username = parse_or_default!(user, params[0], "!INVALID").to_owned();
-    let a = params[1].to_owned();
-    let b = params[2].to_owned();
+    // "" is a sentinal value.
+    let username = parse_or_default!(user, params[0], "").to_owned();
     let realname = params[3].to_owned();
-    Command::USER { username, _1: a, _2: b, realname }
+    Command::USER { username, _1: (), _2: (), realname }
 }
+#[allow(non_snake_case)]
+fn parse_PING(params: &[&str]) -> Command {
+    if params.is_empty() {
+        return Command::Invalid(
+            "PING".to_string(),
+            Some(ERR_NEEDMOREPARAMS),
+            "PING :Not enough parameters".to_string(),
+        );
+    }
+    let token = params[0].to_owned();
+    Command::PING { token }
+}
+#[allow(non_snake_case)]
+fn parse_PONG(_params: &[&str]) -> Command {
+    // no need to parse PONG
+    let server = String::new();
+    let token = String::new();
+    Command::PONG { server, token }
+}
+// OPER
+#[allow(non_snake_case)]
+fn parse_QUIT(params: &[&str]) -> Command {
+    let reason = if params.is_empty() { "".to_string() } else { params[0].to_string() };
+    Command::QUIT { reason }
+}
+// ERROR
 
 /* Channel Operations */
-
 // irc.libera.chat does not behave as expected when passing multiple channels..
 #[allow(non_snake_case)]
 fn parse_JOIN(params: &[&str]) -> Command {
@@ -179,7 +190,6 @@ fn parse_JOIN(params: &[&str]) -> Command {
 
     Command::JOIN { channels, keys, alt: false }
 }
-
 #[allow(non_snake_case)]
 fn parse_PART(params: &[&str]) -> Command {
     if params.is_empty() {
@@ -196,7 +206,21 @@ fn parse_PART(params: &[&str]) -> Command {
 
     Command::PART { channels, reason }
 }
+#[allow(non_snake_case)]
+fn parse_TOPIC(params: &[&str]) -> Command {
+    if params.is_empty() {
+        return Command::Invalid(
+            "TOPIC".to_string(),
+            Some(ERR_NEEDMOREPARAMS),
+            "TOPIC :Not enough parameters".to_string(),
+        );
+    }
+    let channel = params[0].to_owned();
+    let topic = params.get(1).cloned().map(String::from);
 
+    Command::TOPIC { channel, topic }
+}
+// NAMES
 #[allow(non_snake_case)]
 fn parse_LIST(params: &[&str]) -> Command {
     let channels = if !params.is_empty() {
@@ -210,7 +234,23 @@ fn parse_LIST(params: &[&str]) -> Command {
 
     Command::LIST { channels, elistconds }
 }
+// INVITE
+// KICK
 
+/* Server Queries and Commands */
+#[allow(non_snake_case)]
+fn parse_MOTD(params: &[&str]) -> Command {
+    let target = params.first().cloned().unwrap_or_default().to_string();
+    Command::MOTD { target }
+}
+// VERSION
+// ADMIN
+// CONNECT
+// LUSERS
+// TIME
+// STATS
+// HELP
+// INFO
 #[allow(non_snake_case)]
 fn parse_MODE(params: &[&str]) -> Command {
     if params.is_empty() {
@@ -246,6 +286,7 @@ fn parse_MODE(params: &[&str]) -> Command {
     Command::MODE { target, modestring, modeargs }
 }
 
+/* Sending Messages */
 #[allow(non_snake_case)]
 fn parse_PRIVMSG(params: &[&str]) -> Command {
     if params.is_empty() {
@@ -267,7 +308,9 @@ fn parse_PRIVMSG(params: &[&str]) -> Command {
     let text = params[1].to_owned();
     Command::PRIVMSG { targets, text }
 }
+// NOTICE
 
+/* User Based Queries */
 #[allow(non_snake_case)]
 fn parse_WHO(params: &[&str]) -> Command {
     if params.is_empty() {
@@ -282,6 +325,20 @@ fn parse_WHO(params: &[&str]) -> Command {
     let mask = params[0].to_owned();
     Command::WHO { mask }
 }
+// WHOIS
+// WHOWAS
+
+/* Operator Messages */
+// KILL
+// REHASH
+// RESTART
+// SQUIT
+
+/* Optional Messages */
+// AWAY
+// LINKS
+// USERHOST
+// WALLOPS
 
 #[cfg(test)]
 mod tests {
@@ -291,6 +348,15 @@ mod tests {
         ($($x:expr),*) => (vec![$($x.to_string()),*]);
     }
 
+    #[test]
+    fn test_extra_params() {
+        assert_eq!(parse_NICK(&["nick", "extra"]), Command::NICK { nickname: "nick".to_string() });
+    }
+
+    /* Connection Messages */
+    // CAP
+    // AUTHENTICATE
+    // PASS
     #[test]
     fn test_nick() {
         assert_eq!(
@@ -302,10 +368,6 @@ mod tests {
             )
         );
         assert_eq!(
-            parse_NICK(&["mynick", "extra"]),
-            Command::NICK { nickname: "mynick".to_string() }
-        );
-        assert_eq!(
             parse_NICK(&["0invalid"]),
             Command::Invalid(
                 "NICK".to_string(),
@@ -313,18 +375,30 @@ mod tests {
                 "0invalid :Erroneus nickname".to_string()
             )
         );
+        assert_eq!(parse_NICK(&["nick"]), Command::NICK { nickname: "nick".to_string() })
     }
+    #[test]
+    fn test_user() {
+        assert_eq!(
+            parse_USER(&["user", "a", "b", "realname"]),
+            Command::USER {
+                username: "user".to_string(),
+                _1: (),
+                _2: (),
+                realname: "realname".to_string()
+            }
+        );
+    }
+    // PING
+    // PONG
+    // OPER
+    // QUIT
+    // ERROR
+
+    /* Channel Operations */
 
     #[test]
     fn test_join() {
-        assert_eq!(
-            parse_JOIN(&[]),
-            Command::Invalid(
-                "JOIN".to_string(),
-                Some(ERR_NEEDMOREPARAMS),
-                "JOIN :Not enough parameters".to_string()
-            )
-        );
         assert_eq!(
             parse_JOIN(&["#chan1"]),
             Command::JOIN { channels: stringvec!["#chan1"], keys: vec![], alt: false }
@@ -339,6 +413,37 @@ mod tests {
         );
         assert_eq!(parse_JOIN(&["0"]), Command::JOIN { channels: vec![], keys: vec![], alt: true });
     }
+
+    #[test]
+    fn test_part() {
+        assert_eq!(
+            parse_PART(&["#chan1"]),
+            Command::PART { channels: stringvec!["#chan1"], reason: "".to_string() }
+        );
+        assert_eq!(
+            parse_PART(&["#chan1,#chan2,#chan3", "reason"]),
+            Command::PART {
+                channels: stringvec!["#chan1", "#chan2", "#chan3"],
+                reason: "reason".to_string()
+            }
+        );
+    }
+    #[test]
+    fn test_topic() {
+        assert_eq!(
+            parse_TOPIC(&["#chan1"]),
+            Command::TOPIC { channel: "#chan1".to_string(), topic: None }
+        );
+        assert_eq!(
+            parse_TOPIC(&["#chan1", ""]),
+            Command::TOPIC { channel: "#chan1".to_string(), topic: Some("".to_string()) }
+        );
+        assert_eq!(
+            parse_TOPIC(&["#chan1", "topic"]),
+            Command::TOPIC { channel: "#chan1".to_string(), topic: Some("topic".to_string()) }
+        );
+    }
+    // NAMES
     #[test]
     fn test_list() {
         assert_eq!(parse_LIST(&[]), Command::LIST { channels: stringvec![], elistconds: None });
@@ -351,7 +456,19 @@ mod tests {
             Command::LIST { channels: stringvec!["#chan1", "#chan2", "#chan3"], elistconds: None }
         );
     }
+    // INVITE
+    // KICK
 
+    /* Server Queries and Commands */
+    // MOTD
+    // VERSION
+    // ADMIN
+    // CONNECT
+    // LUSERS
+    // TIME
+    // STATS
+    // HELP
+    // INFO
     #[test]
     fn test_mode() {
         assert_eq!(
@@ -371,4 +488,41 @@ mod tests {
             }
         );
     }
+
+    /* Sending Messages */
+    #[test]
+    fn test_privmsg() {
+        assert_eq!(
+            parse_PRIVMSG(&["#chan1", "text"]),
+            Command::PRIVMSG { targets: stringvec!["#chan1"], text: "text".to_string() }
+        );
+        assert_eq!(
+            parse_PRIVMSG(&["#chan1,#chan2,user1", "text"]),
+            Command::PRIVMSG {
+                targets: stringvec!["#chan1", "#chan2", "user1"],
+                text: "text".to_string()
+            }
+        );
+    }
+    // NOTICE
+
+    /* User Based Queries */
+    #[test]
+    fn test_who() {
+        assert_eq!(parse_WHO(&["#chan1"]), Command::WHO { mask: "#chan1".to_string() });
+    }
+    // WHOIS
+    // WHOWAS
+
+    /* Operator Messages */
+    // KILL
+    // REHASH
+    // RESTART
+    // SQUIT
+
+    /* Optional Messages */
+    // AWAY
+    // LINKS
+    // USERHOST
+    // WALLOPS
 }

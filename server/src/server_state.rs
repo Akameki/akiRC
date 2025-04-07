@@ -13,13 +13,7 @@ use crate::{
 };
 
 pub struct ServerState {
-    pub servername: String,
-    pub version: String,
     pub creation_datetime: String,
-    pub usermodes: String,
-    pub channelmodes: String,
-    pub channelmodes_with_params: String,
-    pub isupport_tokens: Vec<String>,
     users: HashMap<String, SharedUser>,       // key=nick
     channels: HashMap<String, SharedChannel>, // key=name
     unregistered_nicks: HashSet<String>,
@@ -30,43 +24,11 @@ pub type SharedServerState = Arc<Mutex<ServerState>>;
 impl ServerState {
     pub fn new() -> Self {
         ServerState {
+            // Day Mon Date Year at Time UTC
+            creation_datetime: chrono::Utc::now().format("%a %b %d %Y at %T UTC").to_string(),
             users: HashMap::new(),
             channels: HashMap::new(),
             unregistered_nicks: HashSet::new(),
-
-            usermodes: String::from("i"),
-            channelmodes: String::from("s"),
-            servername: String::from("akiRC.chat"),
-            version: String::from("akiRC-0.1"),
-            // Day Mon Date Year at Time UTC
-            creation_datetime: chrono::Utc::now().format("%a %b %d %Y at %T UTC").to_string(),
-            channelmodes_with_params: String::from(""),
-            isupport_tokens: vec![
-                // String::from("AWAYLEN=200"),
-                // String::from("CASEMAPPING=ascii"),
-                // String::from("CHANLIMIT=#:25"),
-                String::from("CHANMODES=,,,s"),
-                // String::from("CHANNELLEN=32"),
-                String::from("CHANTYPES=#&"), // =#&
-                // String::from("ELIST..."),
-                // String::from("EXCEPTS...")
-                // String::from("EXTBAN...")
-                // String::from("HOSTLEN=64")
-                // String::from("INVEX...")
-                // String::from("KICKLEN=307")
-                // String::from("MAXLIST=beI:200"),
-                // String::from("MAXTARGET"),
-                // String::from("MODES=4"),
-                String::from("NETWORK=akiRC"),
-                String::from("NICKLEN=16"),
-                // String::from("PREFIX=(ov)@+"),
-                // String::from("SAFELIST"),
-                // String::from("SILENCE"),
-                // String::from("STATUSMSG"),
-                // String::from("TARGMAX=..."),
-                // String::from("TOPICLEN=307"),
-                // String::from("USERLEN=10"),
-            ],
         }
     }
 
@@ -106,7 +68,7 @@ impl ServerState {
     /// Only use in main.rs
     pub fn register_user(&mut self, user: User) -> SharedUser {
         let nick = user.get_nickname();
-        let registered_user = Arc::new(user);
+        let registered_user = user.register_to_arc();
         assert!(self.unregistered_nicks.remove(&nick));
         assert!(self.users.insert(nick, Arc::clone(&registered_user)).is_none());
         registered_user
@@ -125,7 +87,7 @@ impl ServerState {
         assert!(Arc::ptr_eq(&user, &self.users.remove(&nick).unwrap()));
     }
 
-    pub fn get_channel_names(&self) -> impl Iterator<Item = String> {
+    pub fn _get_channel_names(&self) -> impl Iterator<Item = String> {
         self.channels.keys().cloned()
     }
     pub fn get_channel(&self, name: &str) -> Option<SharedChannel> {
@@ -134,7 +96,7 @@ impl ServerState {
     pub fn get_channels(&self) -> impl Iterator<Item = SharedChannel> {
         self.channels.values().map(Arc::clone)
     }
-    pub fn contains_channel_name(&self, name: &str) -> bool {
+    pub fn _contains_channel_name(&self, name: &str) -> bool {
         self.channels.contains_key(name)
     }
     /// Returns &mut to new Channel. Panics if channel already exists.
@@ -145,12 +107,12 @@ impl ServerState {
     }
 
     pub fn add_user_to_channel(&mut self, user: &SharedUser, channel: &SharedChannel) -> bool {
-        let (r1, r2) = (user._join_channel(channel), channel._add_user(user));
+        let (r1, r2) = (user.__join_channel(channel), channel._add_user(user));
         assert_eq!(r1, r2);
         r1
     }
     pub fn remove_user_from_channel(&mut self, user: &SharedUser, channel: &SharedChannel) -> bool {
-        let (r1, r2) = (user._leave_channel(channel), channel._remove_user(user));
+        let (r1, r2) = (user.__leave_channel(channel), channel._remove_user(user));
         assert_eq!(r1, r2);
         if channel.user_count() == 0 {
             self.channels.remove(&channel.name);
@@ -158,7 +120,7 @@ impl ServerState {
         r1
     }
 
-    pub async fn broadcast(&mut self, message: Arc<Message>) {
+    pub async fn _broadcast(&mut self, message: Arc<Message>) {
         for user in self.users.values() {
             user.send(Arc::clone(&message)).await;
         }

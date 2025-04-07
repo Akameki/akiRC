@@ -7,7 +7,8 @@ pub struct Message {
     pub command: Command,
 }
 
-// optional parameters are *not* of type Option to prevent ambiguity with empty Strings and Vecs.
+// optional parameters are *not* of type Option to prevent ambiguity with empty Strings and Vecs,
+// except for commands like TOPIC where presence of an empty argument has semantic meaning.
 
 #[rustfmt::skip]
 #[derive(Debug, PartialEq)]
@@ -17,25 +18,25 @@ pub enum Command {
     // AUTHENTICATE
     // PASS
     NICK { nickname: String },
-    /// "!INVALID" is used as a sentinal value for invalid usernames.
-    USER { username: String, _1: String, _2: String, realname: String },
-    // PING
-    // PONG
+    /// "" is used as a sentinal value for invalid usernames.
+    USER { username: String, _1: (), _2: (), realname: String },
+    PING { token: String },
+    PONG { server: String, token: String },
     // OPER
-    // QUIT
-    // ERROR
+    QUIT { reason: String },
+    ERROR { reason: String },
 
     /* Channel Operations */
     JOIN { channels: Vec<String>, keys: Vec<String>, alt: bool },
     PART { channels: Vec<String>, reason: String },
-    // TOPIC
+    TOPIC { channel: String, topic: Option<String> },
     // NAMES
     LIST { channels: Vec<String>, elistconds: Option<String> },
     // INVITE
     // KICK
 
     /* Server Queries and Commands */
-    // MOTD
+    MOTD { target: String },
     // VERSION
     // ADMIN
     // CONNECT
@@ -70,9 +71,9 @@ pub enum Command {
     /* Non client messages */
     Numeric(Numeric, Vec<String>),
 
-    /// Represents an unknown command or command with invalid params.
     /// Command name, Numeric reply, Numeric params
-    /// If contains Some(numeric), the user should be replied to with it.
+    /// Unknown command or command with invalid params.
+    /// If the second value is Some, the user can be replied to with the Numeric and its params.
     Invalid(String, Option<Numeric>, String),
     /// Contains the command and params for the server to send directly.
     Raw(String),
@@ -102,18 +103,24 @@ pub enum Numeric {
     RPL_LISTEND = 323,
     RPL_CHANNELMODEIS = 324,
     RPL_CREATIONTIME = 329,
-    // RPL_TOPIC = 332,
-    // RPL_TOPICWHOTIME = 333,
+    RPL_NOTOPIC = 331,
+    RPL_TOPIC = 332,
+    RPL_TOPICWHOTIME = 333,
     RPL_WHOREPLY = 352,
     RPL_NAMREPLY = 353,
     RPL_ENDOFNAMES = 366,
+    RPL_MOTD = 372,
+    RPL_MOTDSTART = 375,
+    RPL_ENDOFMOTD = 376,
 
     // Error Replies 400~509
     ERR_NOSUCHNICK = 401,
+    ERR_NOSUCHSERVER = 402,
     ERR_NOSUCHCHANNEL = 403,
     ERR_NORECIPIENT = 411,
     ERR_NOTEXTTOSEND = 412,
     ERR_UNKNOWNCOMMAND = 421,
+    ERR_NOMOTD = 422,
     ERR_NONICKNAMEGIVEN = 431,
     ERR_ERRONEUSNICKNAME = 432,
     ERR_NICKNAMEINUSE = 433,
@@ -136,6 +143,7 @@ impl Display for Message {
     }
 }
 
+// Used for message assembly. Should be refactored to minimize duplicated logic.
 impl Display for Command {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         use Command::*;
@@ -147,13 +155,27 @@ impl Display for Command {
             // PASS
             NICK { nickname } => write!(f, "NICK {}", nickname),
             USER { username, _1, _2, realname } => {
-                write!(f, "USER {} {} {} {}", username, _1, _2, realname)
+                write!(f, "USER {} 0 * {}", username, realname)
             }
-            // PING
-            // PONG
+            PING { token } => write!(f, "PING :{}", token),
+            PONG { server, token } => {
+                write!(f, "PONG")?;
+                if !server.is_empty() {
+                    write!(f, " {}", server)?;
+                }
+                write!(f, " :{}", token)
+            }
             // OPER
-            // QUIT
-            // ERROR
+            QUIT { reason } => {
+                if !reason.is_empty() {
+                    write!(f, "QUIT :{}", reason)
+                } else {
+                    write!(f, "QUIT")
+                }
+            }
+            ERROR { reason } => {
+                write!(f, "ERROR :{}", reason)
+            }
 
             /* Channel Operations */
             JOIN { channels, keys, alt } => {
@@ -174,7 +196,13 @@ impl Display for Command {
                 }
                 Ok(())
             }
-            // TOPIC
+            TOPIC { channel, topic } => {
+                write!(f, "TOPIC {}", channel)?;
+                if let Some(t) = topic {
+                    write!(f, " :{}", t)?;
+                }
+                Ok(())
+            }
             // NAMES
             LIST { channels, elistconds } => {
                 write!(f, "LIST")?;
@@ -190,7 +218,13 @@ impl Display for Command {
             // KICK
 
             /* Server Queries and Commands */
-            // MOTD
+            MOTD { target } => {
+                write!(f, "MOTD")?;
+                if !target.is_empty() {
+                    write!(f, " {}", target)?;
+                }
+                Ok(())
+            }
             // VERSION
             // ADMIN
             // CONNECT

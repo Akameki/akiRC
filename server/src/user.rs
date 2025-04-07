@@ -3,7 +3,7 @@ use std::{
     collections::HashSet,
     fmt::{Debug, Display},
     hash::Hash,
-    sync::{Arc, Mutex, Weak},
+    sync::{Arc, Mutex, OnceLock, Weak},
 };
 
 use common::message::{Command, Message, Numeric};
@@ -18,13 +18,15 @@ pub struct User {
     pub realname: String,
     channels: Mutex<HashSet<WeakChannel>>,
     modes: Mutex<HashSet<char>>,
+
+    self_weak: OnceLock<WeakUser>,
 }
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct WeakUser(pub Weak<User>);
 pub type SharedUser = Arc<User>;
 
 impl User {
-    pub fn new(tx: mpsc::Sender<Arc<Message>>, hostname: String) -> Self {
+    pub fn new(tx: mpsc::Sender<Arc<Message>>, hostname: String) -> User {
         User {
             tx,
             nickname: Mutex::new(String::new()),
@@ -33,7 +35,13 @@ impl User {
             realname: String::new(),
             channels: Mutex::new(HashSet::new()),
             modes: Mutex::new(HashSet::new()),
+            self_weak: OnceLock::new(),
         }
+    }
+    pub fn register_to_arc(self) -> SharedUser {
+        let arc = Arc::new(self);
+        arc.self_weak.set(WeakUser(Arc::downgrade(&arc))).unwrap();
+        arc
     }
     pub fn are_same(user1: &SharedUser, user2: &SharedUser) -> bool {
         Arc::ptr_eq(user1, user2)
@@ -61,16 +69,16 @@ impl User {
             .into_iter()
             .map(|channel| channel.0.upgrade().unwrap())
     }
-    pub fn is_in_channel(&self, channel: &SharedChannel) -> bool {
+    pub fn _is_in_channel(&self, channel: &SharedChannel) -> bool {
         self.channels.lock().unwrap().contains(&WeakChannel(Arc::downgrade(channel)))
     }
     pub fn get_channel_names(&self) -> impl Iterator<Item = String> {
         self.get_channels().map(|channel| channel.name.clone())
     }
-    pub fn _join_channel(&self, channel: &SharedChannel) -> bool {
+    pub fn __join_channel(&self, channel: &SharedChannel) -> bool {
         self.channels.lock().unwrap().insert(WeakChannel(Arc::downgrade(channel)))
     }
-    pub fn _leave_channel(&self, channel: &SharedChannel) -> bool {
+    pub fn __leave_channel(&self, channel: &SharedChannel) -> bool {
         self.channels.lock().unwrap().remove(&WeakChannel(Arc::downgrade(channel)))
     }
 
@@ -98,8 +106,13 @@ impl User {
         )))
         .await;
     }
-    pub async fn broadcast(&self, message: Arc<Message>) {
+    pub async fn broadcast(&self, include_self: bool, message: Arc<Message>) {
         let mut seen = HashSet::new();
+        if include_self {
+            self.send(Arc::clone(&message)).await;
+        }
+        seen.insert(self.self_weak.get().unwrap().clone());
+
         for channel in self.get_channels() {
             for user in channel.get_users() {
                 if seen.insert(WeakUser(Arc::downgrade(&user))) {

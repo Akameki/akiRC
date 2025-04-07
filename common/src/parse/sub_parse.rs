@@ -4,23 +4,13 @@ use nom::{
     IResult, Parser,
     branch::alt,
     bytes::complete::{tag, take},
-    character::complete::{alphanumeric1, char, none_of, one_of, satisfy, space1},
+    character::complete::{alphanumeric1, char, none_of, one_of, satisfy},
     combinator::{opt, recognize, verify},
-    multi::{many_m_n, many1, separated_list1},
+    multi::{many_m_n, many0, many1, separated_list1},
     sequence::terminated,
 };
 
 use super::nom_extended::{str_one_of, take_until_one_of};
-
-// todo: consider not counting \t as space?
-pub fn space(i: &str) -> IResult<&str, &str> {
-    space1(i)
-}
-
-// fn debugp(str: &str) -> IResult<&str, &str> {
-//     println!("{str}");
-//     Err(Err::Error(nom::error::Error {input: "debug", code: nom::error::ErrorKind::Eof}))
-// }
 
 // "targets"
 pub fn msgto(i: &str) -> IResult<&str, &str> {
@@ -67,8 +57,7 @@ pub fn hostaddr(i: &str) -> IResult<&str, &str> {
 
 // }
 pub fn nickname(i: &str) -> IResult<&str, &str> {
-    recognize((alt((letter, special)), many_m_n(0, 15, alt((letter, digit, special, tag("-"))))))
-        .parse(i)
+    recognize((alt((letter, special)), many0(alt((letter, digit, special, tag("-")))))).parse(i)
 }
 pub fn chanstring(i: &str) -> IResult<&str, &str> {
     take_until_one_of("\0\x07\r\n ,:")(i)

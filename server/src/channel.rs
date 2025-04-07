@@ -8,7 +8,7 @@ use std::{
 
 use common::message::Message;
 
-use crate::user::{SharedUser, User, WeakUser};
+use crate::user::{SharedUser, WeakUser};
 
 /// Each mode is one of four types, as specified by IRCv3 docs.  
 /// ChannelModes only stores modes, and Channel provides no checks for privaleges.  
@@ -26,7 +26,8 @@ pub struct ChannelModes {
 pub struct Channel {
     pub creation_time: String,
     pub name: String,
-    pub topic: String,
+    /// topic, who, time
+    topic_info: Mutex<Option<(String, String, String)>>,
     users: Mutex<HashSet<WeakUser>>,
     modes: Mutex<ChannelModes>,
 }
@@ -44,13 +45,21 @@ impl Channel {
                 .to_string(),
             name,
             users: Mutex::new(HashSet::new()),
-            topic: String::new(),
+            topic_info: Mutex::new(None),
             modes: Mutex::new(ChannelModes { s: false }),
         }
     }
 
-    pub fn get_nicks(&self) -> impl Iterator<Item = String> {
-        self.get_users().map(|user| user.get_nickname())
+    /// topic, who, time
+    pub fn get_topic_info(&self) -> Option<(String, String, String)> {
+        self.topic_info.lock().unwrap().clone()
+    }
+    pub fn set_topic(&self, user: &SharedUser, topic: &str) {
+        *self.topic_info.lock().unwrap() = Some((
+            topic.to_string(),
+            user.get_fqn_string(),
+            SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).unwrap().as_secs().to_string(),
+        ));
     }
 
     /* Users */
@@ -63,6 +72,10 @@ impl Channel {
     /// Snapshot of users in this channel.
     pub fn get_users(&self) -> impl Iterator<Item = SharedUser> {
         self.users.lock().unwrap().clone().into_iter().map(|user| user.0.upgrade().unwrap())
+    }
+    /// Snapshot of nicks in this channel.
+    pub fn get_nicks(&self) -> impl Iterator<Item = String> {
+        self.get_users().map(|user| user.get_nickname())
     }
     pub fn _add_user(&self, user: &SharedUser) -> bool {
         self.users.lock().unwrap().insert(WeakUser(Arc::downgrade(user)))
@@ -106,13 +119,7 @@ impl Display for Channel {
 
 impl Debug for Channel {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "[{} ({}) {}]",
-            self.name,
-            self.topic,
-            self.get_nicks().collect::<Vec<_>>().join(", ")
-        )
+        write!(f, "[{} {}]", self.name, self.get_nicks().collect::<Vec<_>>().join(", "),)
     }
 }
 
